@@ -74,7 +74,7 @@ class Blob {
   }
   
   float getSize() {
-    return abs(50 * getOsc1() * getOsc4() + 10);
+    return abs(170 * getOsc1() * getOsc4() + 170);
   }
   
   float getHue() {
@@ -87,7 +87,7 @@ GLGraphicsOffScreen glg1;
 void setup() {
   size(500, 500, GLConstants.GLGRAPHICS);
   
-  glg1 = new GLGraphicsOffScreen(this, width, height, true, 4);
+  glg1 = new GLGraphicsOffScreen(this, width, height, true, 0);
   glg1.beginDraw();
   glg1.noStroke();
   glg1.fill(255, 255, 255);
@@ -109,7 +109,10 @@ void draw() {
   
   // feedback
   GLTexture tex1 = glg1.getTexture();
-  float zoom = 20.0 + blob1.getOsc1() * blob2.getOsc1() * blob3.getOsc1() * 10.0;
+  float zoom = 20.0f + 15.0f * (
+    sin(blob1.c1 * 0.00011f) + 
+    sin(blob2.c2 * 0.00011f) + 
+    sin(blob3.c3 * 0.00011f)) / 3.0f;
   println(zoom);
   glg1.image(tex1, -zoom/2, -zoom/2, width+zoom, height+zoom);
 
