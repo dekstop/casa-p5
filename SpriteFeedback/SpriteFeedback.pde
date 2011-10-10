@@ -96,13 +96,13 @@ void setup() {
   glg1 = new GLGraphicsOffScreen(this, width, height, true, 0);
   glg1.beginDraw();
   glg1.noStroke();
-  glg1.fill(255, 255, 255);
+  glg1.fill(0, 0, 0);
   glg1.rect(0, 0, width, height);
   glg1.endDraw();
   
   smooth();
   noStroke();
-  fill(255, 255, 255);
+  fill(0, 0, 0);
   rect(0, 0, width, height);
 }
 
@@ -122,7 +122,11 @@ void draw() {
   glg1.beginDraw();
   
   // clear  
-  glg1.fill(255, 255, 255, 3);
+  int clear_alpha = round(1 + 5.0/2.0 * ((
+    sin(blob1.c2 * 0.000007f) + 
+    sin(blob2.c3 * 0.000007f) + 
+    sin(blob3.c4 * 0.000007f)) / 3.0 + 1.0));
+  glg1.fill(0, 0, 0, clear_alpha);
   glg1.rect(0, 0, width, height);
   
   // blobs
