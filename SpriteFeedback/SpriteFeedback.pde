@@ -35,12 +35,12 @@ class Blob {
     c4 += d4;
   }
   
-  void draw(GLGraphicsOffScreen g) {
+  void draw(GLGraphicsOffScreen g, int alpha) {
     g.fill(
       360 * getHue(), 
       100, 
       100, 
-      90);
+      alpha);
     float d = getSize();
     g.ellipse(
       getX() * g.width/2 + g.width/4, 
@@ -106,17 +106,18 @@ void setup() {
   rect(0, 0, width, height);
 }
 
-Blob blob1 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.0015f);
-Blob blob2 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.0031f);
-Blob blob3 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.0019f);
+float speed = 1f;
+Blob blob1 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.0015f * speed);
+Blob blob2 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.0031f * speed);
+Blob blob3 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.0019f * speed);
 
-Blob blob4 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.00151f);
-Blob blob5 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.00311f);
-Blob blob6 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.00191f);
+Blob blob4 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.00151f * speed);
+Blob blob5 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.00311f * speed);
+Blob blob6 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.00191f * speed);
 
-Blob blob7 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.001501f);
-Blob blob8 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.003101f);
-Blob blob9 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.001901f);
+Blob blob7 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.001501f * speed);
+Blob blob8 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.003101f * speed);
+Blob blob9 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.001901f * speed);
 
 void draw() {
   glg1.beginDraw();
@@ -131,29 +132,32 @@ void draw() {
   
   // blobs
   glg1.colorMode(HSB, 360, 100, 100, 100);
+  
+  int draw_alpha = round(60 + 25 / 2.0 * ((
+    sin(blob1.c2 * 0.000137f) + 
+    sin(blob2.c3 * 0.000137f) + 
+    sin(blob3.c4 * 0.000137f)) / 3.0 + 1.0));
 
   blob1.move();
-  blob1.draw(glg1);
-
+  blob1.draw(glg1, draw_alpha);
   blob2.move();
-  blob2.draw(glg1);
-
+  blob2.draw(glg1, draw_alpha);
   blob3.move();
-  blob3.draw(glg1);
+  blob3.draw(glg1, draw_alpha);
 
   blob4.move();
-  blob4.draw(glg1);
+  blob4.draw(glg1, draw_alpha);
   blob5.move();
-  blob5.draw(glg1);
+  blob5.draw(glg1, draw_alpha);
   blob6.move();
-  blob6.draw(glg1);
+  blob6.draw(glg1, draw_alpha);
 
   blob7.move();
-  blob7.draw(glg1);
+  blob7.draw(glg1, draw_alpha);
   blob8.move();
-  blob8.draw(glg1);
+  blob8.draw(glg1, draw_alpha);
   blob9.move();
-  blob9.draw(glg1);
+  blob9.draw(glg1, draw_alpha);
 
   glg1.colorMode(RGB);
 
@@ -162,7 +166,7 @@ void draw() {
   glg1.beginDraw();
   // feedback
   GLTexture tex1 = glg1.getTexture();
-  float zoom = 20.0f + 15.0f * (
+  float zoom = 25.0f + 15.0f * (
     sin(blob1.c1 * 0.00011f) + 
     sin(blob2.c2 * 0.00011f) + 
     sin(blob3.c3 * 0.00011f)) / 3.0f;
