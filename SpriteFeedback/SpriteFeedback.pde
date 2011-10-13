@@ -28,11 +28,15 @@ class Blob {
     this.scale = scale;
   }
   
+  void move(float speed) {
+    c1 += d1 * speed;
+    c2 += d2 * speed;
+    c3 += d3 * speed;
+    c4 += d4 * speed;
+  }
+  
   void move() {
-    c1 += d1;
-    c2 += d2;
-    c3 += d3;
-    c4 += d4;
+    move(1.0f);
   }
   
   void draw(GLGraphicsOffScreen g, int alpha) {
@@ -85,6 +89,7 @@ class Blob {
 
 GLGraphicsOffScreen glg1;
 MovieMaker mm;
+float speed = 1.0f;
 boolean isRecording = false;
 int clipCounter = 0;
 String clipNamePrefix = "clip-" + System.currentTimeMillis() + "-";
@@ -106,18 +111,18 @@ void setup() {
   rect(0, 0, width, height);
 }
 
-float speed = 1f;
-Blob blob1 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.0015f * speed);
-Blob blob2 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.0031f * speed);
-Blob blob3 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.0019f * speed);
+float scale_factor = 1f;
+Blob blob1 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.0015f * scale_factor);
+Blob blob2 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.0031f * scale_factor);
+Blob blob3 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.0019f * scale_factor);
 
-Blob blob4 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.00151f * speed);
-Blob blob5 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.00311f * speed);
-Blob blob6 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.00191f * speed);
+Blob blob4 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.00151f * scale_factor);
+Blob blob5 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.00311f * scale_factor);
+Blob blob6 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.00191f * scale_factor);
 
-Blob blob7 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.001501f * speed);
-Blob blob8 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.003101f * speed);
-Blob blob9 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.001901f * speed);
+Blob blob7 = new Blob(36.0f, 35.0f, 32.0f, 24.0f, 0.001501f * scale_factor);
+Blob blob8 = new Blob(35.0f, 36.0f, 24.0f, 32.0f, 0.003101f * scale_factor);
+Blob blob9 = new Blob(36.0f, 24.0f, 32.0f, 35.0f, 0.001901f * scale_factor);
 
 void draw() {
   glg1.beginDraw();
@@ -138,25 +143,25 @@ void draw() {
     sin(blob2.c3 * 0.000137f) + 
     sin(blob3.c4 * 0.000137f)) / 3.0 + 1.0));
 
-  blob1.move();
+  blob1.move(speed);
   blob1.draw(glg1, draw_alpha);
-  blob2.move();
+  blob2.move(speed);
   blob2.draw(glg1, draw_alpha);
-  blob3.move();
+  blob3.move(speed);
   blob3.draw(glg1, draw_alpha);
 
-  blob4.move();
+  blob4.move(speed);
   blob4.draw(glg1, draw_alpha);
-  blob5.move();
+  blob5.move(speed);
   blob5.draw(glg1, draw_alpha);
-  blob6.move();
+  blob6.move(speed);
   blob6.draw(glg1, draw_alpha);
 
-  blob7.move();
+  blob7.move(speed);
   blob7.draw(glg1, draw_alpha);
-  blob8.move();
+  blob8.move(speed);
   blob8.draw(glg1, draw_alpha);
-  blob9.move();
+  blob9.move(speed);
   blob9.draw(glg1, draw_alpha);
 
   glg1.colorMode(RGB);
@@ -183,21 +188,26 @@ void draw() {
 }
 
 void keyPressed() {
-  if (key == 'r') {
-    if (isRecording) {
-      println("Stop recording.");
-      mm.finish();
-      mm = null;
-    }
-    else {
-      String clipName = clipNamePrefix + clipCounter + ".mov";
-      clipCounter++;
-      println("Recording to: " + clipName);
-      mm = new MovieMaker(this, width, height, 
-        clipName,
-        30, MovieMaker.MOTION_JPEG_B, MovieMaker.BEST);
-    }
-    isRecording = !isRecording;
+  switch (key) {
+    case '+': speed += 0.1f; break;
+    case '-': speed -= 0.1f; break;
+    case '0': speed = 1.0f; break;
+    case 'r':
+      if (isRecording) {
+        println("Stop recording.");
+        mm.finish();
+        mm = null;
+      }
+      else {
+        String clipName = clipNamePrefix + clipCounter + ".mov";
+        clipCounter++;
+        println("Recording to: " + clipName);
+        mm = new MovieMaker(this, width, height, 
+          clipName,
+          30, MovieMaker.MOTION_JPEG_B, MovieMaker.BEST);
+      }
+      isRecording = !isRecording;
+      break; // 'r'
   }
 }
 
