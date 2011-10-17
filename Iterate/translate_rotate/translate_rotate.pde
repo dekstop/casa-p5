@@ -44,11 +44,11 @@ void draw() {
   glg1.colorMode(HSB, 360, 100, 100, 100);
   
   // clear 
-  glg1.fill(0, 0, 0, 3);
+  glg1.fill(0, 0, 0, 2);
   glg1.rect(0, 0, width, height);
   
   // draw shapes
-  float size = (width+height)/2f;
+  float size = (width+height)/3f;
   glg1.translate(width/2, height/2);
 
   for (int i=0; i<100; i++) {
@@ -59,9 +59,9 @@ void draw() {
       15 + i/4f);
 //    glg1.fill(350, 100, 100, 90);
     drawShape(glg1, -width/4, 0, size * (100f / i) * 0.01);
+    glg1.translate(sin(i / 20f + trans1) * size * 0.1f, 0);
     glg1.rotate(
       PI + sin(i / (1f + rot1) + rot2) * PI);
-    glg1.translate(sin(i / 20f + trans1) * size * 0.1f, 0);
   }
   
   rot1 += dx_rot1;
@@ -74,7 +74,7 @@ void draw() {
   // feedback
   glg1.beginDraw();
   GLTexture tex1 = glg1.getTexture();
-  float zoom = 25.0f + 15.0f * sin(rot1 * 0.00011f) / 3.0f;
+  float zoom = 25.0f + 25.0f * sin(rot2 * 0.011f) / 3.0f;
   glg1.image(tex1, -zoom/2, -zoom/2, width+zoom, height+zoom);
   glg1.endDraw();
   
