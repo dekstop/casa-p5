@@ -67,12 +67,17 @@ float maxCellCount = 0;
 // Filters
 Boolean filterAt = null; // three-state toggles
 Boolean filterRt = null;
-String[] languages = new String[]{
-  //null, "ar", "da", "de", "el", "en", "eo", "es", "fa", "fi", "fr", "he", "hu", "id", 
-  //"is", "it", "ja", "ko", "lt", "nl", "no", "pl", "pt", "ru", "sv", "th", "ur", "zh"
-  null, "de", "en", "es", "eo", "fr", "id", "it", "nl", "no" // just the top 9
+
+String[] languages = new String[] { // top 9, and "all"
+  null, "de", "en", "es", "eo", "fr", "id", "it", "nl", "no"
 };
 int filterLangIdx = 0;
+
+String[] sources = new String[] { // top 9, and "all"
+  null, "API", "Echofon", "TweetDeck", "Tweetie", "Twittelator", 
+  "Twitter for BlackBerry", "Twitterrific", "UberTwitter", "web"
+};
+int filterSourceIdx = 0;
 
 // Transitions
 int curIdx = 0;
@@ -110,6 +115,7 @@ void draw() {
   text("[1] AT: " + (filterAt==null ? "off" : filterAt), 15, 62);
   text("[2] RT: " + (filterRt==null ? "off" : filterRt), 15, 74);
   text("[3] Language: " + (languages[filterLangIdx]==null ? "all" : languages[filterLangIdx]), 15, 86);
+  text("[4] Source: " + (sources[filterSourceIdx]==null ? "all" : sources[filterSourceIdx]), 15, 98);
   smooth();
   
   // Histogram
@@ -235,6 +241,9 @@ void keyPressed() {
   } else if (key=='3') {
     filterLangIdx = (filterLangIdx + 1) % languages.length;
     applyModelFilters();
+  } else if (key=='4') {
+    filterSourceIdx = (filterSourceIdx + 1) % sources.length;
+    applyModelFilters();
   } else if (key=='l') {
     lockSelection = !lockSelection;
   }
@@ -252,6 +261,10 @@ void applyModelFilters() {
       String lang = languages[filterLangIdx];
       if (lang!=null) {
         if (!lang.equals(rec.lang)) return false;
+      }
+      String source = sources[filterSourceIdx];
+      if (source!=null) {
+        if (!source.equals(rec.source)) return false;
       }
       return true;
     }
