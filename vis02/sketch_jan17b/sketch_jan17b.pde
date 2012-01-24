@@ -80,8 +80,10 @@ String[] sources = new String[] { // top 9, and "all"
 int filterSourceIdx = 0;
 
 // Transitions
-int curIdx = 0;
 boolean lockSelection = false; // allow to move mouse without changing selection
+boolean cycle = false; // continuously step through timeline
+
+int curIdx = 0;
 Float[] sourceState;
 Float[] targetState;
 long startBlendTime;
@@ -137,7 +139,7 @@ void draw() {
   Float[] grid = new Float[numRows * numCols];
   long now = System.currentTimeMillis();
   float blend = 1.0f * min(now - startBlendTime, blendDuration) / blendDuration;
-  //blend = sin((blend-0.5) * PI) / 2 + 0.5; // easing in and out
+//  blend = sin((blend-0.5) * PI) / 2 + 0.5; // easing in and out
   blend = sin(blend * PI/2); // easing out
   for (int i=0; i<numRows*numCols; i++) {
     grid[i] = (1-blend)*sourceState[i] + blend*targetState[i];
@@ -146,11 +148,18 @@ void draw() {
   popMatrix();
   
   // Transitions
-  // check for mouse movement -> determine new state
   int idx;
-  if (lockSelection) {
+  if (cycle) {
+    // continuously cycle
+    idx = curIdx;
+    if (now>startBlendTime+blendDuration) {
+      idx = (curIdx + 1) % cells.size();
+    }
+  } else if (lockSelection) {
+    // keep current selection
     idx = curIdx;
   } else {
+    // check for mouse movement -> determine new selection
     idx = mouseX * cells.size() / width;
   }
   if (forceTransition || idx != curIdx) {
@@ -177,12 +186,13 @@ void draw() {
   // Captions
   fill(255, 0, 255, 255);
   noSmooth();
-  text("[L] Lock selected time: " + lockSelection, 15, 25);
-  text("Filters:", 15, 50);
-  text("[1] AT: " + (filterAt==null ? "off" : filterAt), 15, 62);
-  text("[2] RT: " + (filterRt==null ? "off" : filterRt), 15, 74);
-  text("[3] Language: " + (languages[filterLangIdx]==null ? "all" : languages[filterLangIdx]), 15, 86);
-  text("[4] Source: " + (sources[filterSourceIdx]==null ? "all" : sources[filterSourceIdx]), 15, 98);
+  text("[C] Cycle: " + cycle, 15, 25);
+  text("[L] Lock selection: " + lockSelection, 15, 37);
+  text("Filters:", 15, 62);
+  text("[1] AT: " + (filterAt==null ? "off" : filterAt), 15, 74);
+  text("[2] RT: " + (filterRt==null ? "off" : filterRt), 15, 86);
+  text("[3] Language: " + (languages[filterLangIdx]==null ? "all" : languages[filterLangIdx]), 15, 98);
+  text("[4] Source: " + (sources[filterSourceIdx]==null ? "all" : sources[filterSourceIdx]), 15, 110);
   text("Timeline", 15, height - height/10 - 15);
   smooth();
 }
@@ -210,8 +220,9 @@ void drawGrid(Float[] grid) {
 
 void dot(float x, float y, float z) {
   pushMatrix();
-  translate(x, y, (z + cellSize)/2);
-  box(cellSize, cellSize, z + cellSize);
+  float minHeight = cellSize/10;
+  translate(x, y, (z + minHeight)/2);
+  box(cellSize * 0.999, cellSize * 0.999, z + minHeight);
   popMatrix();
 //  beginShape();
 //  vertex(x, y - dotSize, z);
@@ -245,6 +256,8 @@ void keyPressed() {
   } else if (key=='4') {
     filterSourceIdx = (filterSourceIdx + 1) % sources.length;
     applyModelFilters();
+  } else if (key=='c') {
+    cycle = !cycle;
   } else if (key=='l') {
     lockSelection = !lockSelection;
   }
