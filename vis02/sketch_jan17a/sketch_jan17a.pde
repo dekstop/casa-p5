@@ -46,7 +46,7 @@ void setup() {
   println(records.size());
   Collections.sort(records, new Comparator<Record>() {
     public int compare(Record r1, Record r2) {
-      return r2.date.compareTo(r1.date);
+      return r1.date.compareTo(r2.date);
     }
     public boolean equals(Object obj) {
       return this == obj;
@@ -81,7 +81,7 @@ void draw() {
 
 //  rotateY(map(mouseX, 0, width, 0, PI));
 //  rotateY(map(mouseY, 0, height, 0, -PI));
-  rotateZ(map(mouseX, 0, width, 0, PI));
+//  rotateZ(map(mouseX, 0, width, 0, PI));
   
   // Draw
   //fill(255, 255, 255, 30);
