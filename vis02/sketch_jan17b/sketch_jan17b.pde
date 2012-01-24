@@ -107,17 +107,6 @@ void setup() {
 void draw() {
   background(0);
   
-  // Captions
-  fill(255, 0, 255, 255);
-  noSmooth();
-  text("[L] Lock selection: " + lockSelection, 15, 25);
-  text("Filters:", 15, 50);
-  text("[1] AT: " + (filterAt==null ? "off" : filterAt), 15, 62);
-  text("[2] RT: " + (filterRt==null ? "off" : filterRt), 15, 74);
-  text("[3] Language: " + (languages[filterLangIdx]==null ? "all" : languages[filterLangIdx]), 15, 86);
-  text("[4] Source: " + (sources[filterSourceIdx]==null ? "all" : sources[filterSourceIdx]), 15, 98);
-  smooth();
-  
   // Histogram
   float maxH = height/10f;
   float w = (float)width / counts.length;
@@ -184,6 +173,18 @@ void draw() {
   rect(x-2, height-maxH-2, w+2, maxH+4);
   smooth();
   noStroke();
+
+  // Captions
+  fill(255, 0, 255, 255);
+  noSmooth();
+  text("[L] Lock selected time: " + lockSelection, 15, 25);
+  text("Filters:", 15, 50);
+  text("[1] AT: " + (filterAt==null ? "off" : filterAt), 15, 62);
+  text("[2] RT: " + (filterRt==null ? "off" : filterRt), 15, 74);
+  text("[3] Language: " + (languages[filterLangIdx]==null ? "all" : languages[filterLangIdx]), 15, 86);
+  text("[4] Source: " + (sources[filterSourceIdx]==null ? "all" : sources[filterSourceIdx]), 15, 98);
+  text("Timeline", 15, height - height/10 - 15);
+  smooth();
 }
 
 void drawGrid(Float[] grid) {
