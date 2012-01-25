@@ -1,9 +1,11 @@
 
-// Visualising points over time
-// Thoughts:
-// * dots that appear and fade out (blend, or scale)
-// * motion blur whose direction changes with moving average of spatial trend
-// * group into hourly slices, draw intensity curve at bottom, then highlight drawn sections when playing back
+// Visualising geo-coded events (tweets) over time.
+// - Aggregates points in a grid and produces a 3D bar chart.
+// - Use the mouse to rotate the scene, and to select events on the timeline.
+// - Optionally turn on filters that only display subsets of the data (retweets, 
+//   specific Twitter clients, specfic languages.)
+//
+// Martin Dittus, January 2012
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -104,6 +106,7 @@ void setup() {
 
   noStroke();
   colorMode(HSB);
+//  textMode(SCREEN); // prevents model from hiding captions; but also involves massive render performance penalty. Urgh.
 }
 
 void draw() {
