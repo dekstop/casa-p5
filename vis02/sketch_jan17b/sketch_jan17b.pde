@@ -89,7 +89,7 @@ int curIdx = 0;
 Float[] sourceState;
 Float[] targetState;
 long startBlendTime;
-long blendDuration = 500; // in ms
+long blendDuration = 300; // in ms
 boolean forceTransition = false; // after filter changes
 
 void setup() {
@@ -196,7 +196,7 @@ void draw() {
   text("[2] RT: " + (filterRt==null ? "off" : filterRt), 15, 86);
   text("[3] Language: " + (languages[filterLangIdx]==null ? "all" : languages[filterLangIdx]), 15, 98);
   text("[4] Source: " + (sources[filterSourceIdx]==null ? "all" : sources[filterSourceIdx]), 15, 110);
-  text("Timeline", 15, height - height/10 - 15);
+  text("Timeline", 15, height - height/10 + 15);
   smooth();
 }
 
