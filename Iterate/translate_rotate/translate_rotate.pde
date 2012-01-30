@@ -1,4 +1,6 @@
 
+// Martin Dittus, Oct 2011.
+
 import processing.opengl.*;
 import codeanticode.glgraphics.*;
 
