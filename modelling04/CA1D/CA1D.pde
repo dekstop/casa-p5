@@ -1,4 +1,5 @@
 // 1D Cellular Automaton.
+// Martin Dittus, Feb 2012.
 //
 // General process:
 // * CA state is a 1D vector of cells
@@ -28,6 +29,8 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 
+import processing.video.*;
+
 int numCells = 71;
 int maxVal = 100;
 int maxParentBit = 7; // TODO: calculate from maxVal
@@ -45,6 +48,8 @@ int numGenerations;
 int[] parentBits = new int[3];
 int[] ruleCoefficients = new int[8];
 Map<Integer, Integer> ruleStats = new HashMap<Integer, Integer>();
+
+MovieMaker mm;
 
 void setup() {
   size(800, 600);
@@ -119,6 +124,12 @@ void draw() {
   if (++rowIdx > numRows) {
     rowIdx = 0;
   }
+  
+  // Record
+  if (mm!=null) {
+    mm.addFrame();
+//    text("Recording...", 15, 130);
+  }
 }
 
 void restart() {
@@ -186,5 +197,30 @@ void set(int idx, int value) {
 void keyPressed() {
   if (key == ' ') {
     restart();
+  } else if (key=='r') {
+    if (mm==null) {
+      startRecording();
+    } else {
+      stopRecording();
+    }
+  }
+}
+
+void stop() {
+  stopRecording();
+}
+
+void startRecording() {
+  println("Starting recording...");
+  mm = new MovieMaker(this, width, height, 
+    "recording-" + System.currentTimeMillis() + ".mov",
+    30, MovieMaker.MOTION_JPEG_B, MovieMaker.BEST);
+}
+
+void stopRecording() {
+  println("Stopping recording.");
+  if (mm!=null) {
+    mm.finish();
+    mm = null;
   }
 }
