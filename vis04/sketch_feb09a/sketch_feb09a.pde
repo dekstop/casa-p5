@@ -1,8 +1,8 @@
 
 // Visualising flows of bike journey data.
-// Step three: node activity.
-// - bike stand size/brightness: cumulative activity over time (number of journeys starting or ending here)
-// - bike stand hue: net inventory balance (red: net loss of bikes, green: net gain, yellow: net zero)
+// Step three: bike stand activity, journeys in motion.
+// - bike stand size/brightness: turnover, cumulative activity (number of journeys starting or ending here)
+// - bike stand hue: inventory, net gain/loss of bicycles (red: net loss, green: net gain, yellow: net zero)
 // 
 // Martin Dittus, Feb 2012.
 
@@ -74,7 +74,7 @@ Set<Journey> activeJourneys = new HashSet<Journey>();
 // Loop state
 long minTime, maxTime;
 int maxConcurrentJourneys = 871; //0;
-long loopDuration = 20 * 1000; // loop time in ms
+long loopDuration = 50 * 1000; // loop time in ms
 long loopStartTime;
 
 void setup() {
@@ -154,21 +154,17 @@ void draw() {
   noStroke();
   for (Location l : locations.values()) {
     int inventory = l.numDest - l.numSource;
-    int activity = l.numSource + l.numDest;
+    int turnover = l.numSource + l.numDest;
+
     float fillState = min(50, max(0, inventory + 25)) / 50f; // map [-50..50] inventory to [0..1] range
     fill(
       (256 / 4) * fillState, // map [0..1] to [red..green] colour
-      250, 200, 30);
+      250, 200, 130);
     
-//    if (inventory > 0) {
-//      fill(256 / 4, 250, 200, 100); // green
-//    } else {
-//      fill(0, 200, 250, 100); // red
-//    }
-    dot(projectLat(l.lat), projectLon(l.lon), 0, 2 + dotSize * activity);
+    dot(projectLat(l.lat), projectLon(l.lon), 0, dotSize * turnover); // circle: turnover and inventory
     
-    fill(0, 0, 150, 255);
-    dot(projectLat(l.lat), projectLon(l.lon), 0, 1);
+//    fill(0, 0, 150, 255);
+//    dot(projectLat(l.lat), projectLon(l.lon), 0, 1); // dot: location
   }
   
   // Journeys
@@ -181,9 +177,6 @@ void draw() {
     float y1 = projectLon(a.lon);
     float x2 = projectLat(b.lat);
     float y2 = projectLon(b.lon);
-//    strokeWeight(1);
-//    stroke(0, 0, 255, 100);
-//    line(x1, y1, x2, y2);
     
     // Current position
     float progress = (float)(curTime - j.startDate.getTime()) / (j.endDate.getTime() - j.startDate.getTime());
@@ -195,13 +188,13 @@ void draw() {
     noStroke();
 
     fill(255*5/8, 200, 150 + 100 * size, size * 1); // blue halo
-    dot(px, py, 0, size * size * size * 50);
+    if (size > 0.5) dot(px, py, 0, size * size * size * 50);
 
-    fill(255*5/8, 200, 150 + 100 * size, 10 + size * 30); // blue body
-    dot(px, py, 0, size * size * size * 10);
+    fill(255*5/8, 200, 150 + 100 * size, 0 + size * 10); // blue body
+    if (size > 0.2) dot(px, py, 0, size * size * size * 10);
 
-    fill(255*5/8, 50, 255 * size, 200 * size); // blue/white peak
-//    dot(px, py, 0, size * size * 2);
+    fill(255*5/8, 50, 255 * size, 100 * size); // blue/white peak
+    dot(px, py, 0, size * size * 2);
   }
 
   // End model
