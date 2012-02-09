@@ -3,6 +3,12 @@
 // Step three: node activity.
 // Martin Dittus, Feb 2012.
 
+// TODO:
+// - only increment activity counters at start/end of journey
+// - node size/brightness: activity over time (number of journeys starting or ending here)
+// - node hue: relative inventory balance (red/white/green)
+// - add basemap of boroughs
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -52,19 +58,20 @@ int mouseClickX;
 int mouseClickY;
 
 // Shapes
-float dotSize = 0.02f;
+float dotSize = 0.01f;
 
 Map<Integer, Location> locations = null;
 List<Flow> flows = null;
 List<Journey> journeys = null;
 
-// Slices of time
-TreeMap<Long, List<Journey>> slices;
-long currentSliceIdx, minSliceIdx, maxSliceIdx;
-int sliceWidth = 10; // moving window size: number of slices drawn per iteration
+// Loop state
+long minTime, maxTime;
+int maxConcurrentJourneys = 871; //0;
+long loopDuration = 20 * 1000; // loop time in ms
+long loopStartTime;
 
 void setup() {
-  size(500, 500, OPENGL);
+  size(800, 600, OPENGL);
   calibrateProjection();
   noStroke();
   colorMode(HSB);
@@ -73,29 +80,44 @@ void setup() {
 
   try {
     locations = readLocations("locations.csv");
-    println(locations.size());
+    println("Locations: " + locations.size());
     flows = readFlows("flows.csv");
-    println(flows.size());
+    println("Flows: " + flows.size());
     journeys = readJourneys("journeys.csv");
-    println(journeys.size());
+    println("Journeys: " + journeys.size());
   } catch (ParseException e) {
     println(e);
     return;
   }
-  slices = aggregateSlices(journeys);
-  currentSliceIdx = minSliceIdx = slices.firstKey();
-  maxSliceIdx = slices.lastKey();
+  minTime = Long.MAX_VALUE;
+  maxTime = Long.MIN_VALUE;
+  for (Journey j : journeys) {
+    minTime = Math.min(minTime, j.startDate.getTime());
+    maxTime = Math.max(maxTime, j.endDate.getTime());
+//    maxConcurrentJourneys = max(maxConcurrentJourneys, getActiveJourneys(journeys, j.startDate.getTime()).size());
+  }
+  println("Max concurrent journeys: " + maxConcurrentJourneys);
+  loopStartTime = System.currentTimeMillis();
 }
 
 void draw() {
 
-  List<Journey> slice = getSlice(currentSliceIdx, currentSliceIdx + sliceWidth);
+  // Current state
+  long loopTime; // playback time within loop, in ms
+  while ((loopTime = System.currentTimeMillis() - loopStartTime) > loopDuration) {
+    loopStartTime += loopDuration;
+    background(255);
+    resetInventory();
+  }
+  long curTime = minTime + loopTime * (maxTime-minTime) / loopDuration; // time in model, in ms
+  List<Journey> activeJourneys = getActiveJourneys(journeys, curTime);
   
-  background(0);
+  // Prepare display
+//  background(0);
   noStroke();
   fill(0, 0, 0, 10);
 //  fill(0, 0, 0, 255);
-//  rect(0, 0, width, height);
+  rect(0, 0, width, height);
   
   // Model
   pushMatrix();
@@ -107,62 +129,66 @@ void draw() {
 //  fill(0, 0, 0, 10);
 //  rect(0, 0, width, height);
 
-  // 1. Stations
-  noStroke();
-  for (Location l : locations.values()) {
-    if (l.inventory > 0) {
-      fill(256 / 4, 200, 200, 250); // green
-    } else {
-      fill(0, 200, 200, 250); // red
-    }
-    dot(
-      map(l.lat, minLat, maxLat, 0, width), 
-      map(l.lon, minLon, maxLon, 0, height), 
-      0,
-      dotSize * abs(l.inventory));
-  }
-  
-  // 2. Journeys
-  for (Journey j : slice) {
+  // Journeys
+  for (Journey j : activeJourneys) {
     Location a = locations.get(j.startStandId);
     Location b = locations.get(j.endStandId);
-    a.inventory--;
-    b.inventory++;
+    a.inventory--; // TODO: move this to first frame of this journey only
+    b.inventory++; // TODO: move this to last frame of this journey only
+    
+    // Path
     float x1 = projectLat(a.lat);
     float y1 = projectLon(a.lon);
     float x2 = projectLat(b.lat);
     float y2 = projectLon(b.lon);
-    strokeWeight(1);
-    stroke(0, 0, 255, 100);
-    line(x1, y1, x2, y2);
+//    strokeWeight(1);
+//    stroke(0, 0, 255, 100);
+//    line(x1, y1, x2, y2);
+    
+    // Current position
+    float progress = (float)(curTime - j.startDate.getTime()) / (j.endDate.getTime() - j.startDate.getTime());
+    // Tween: ease in, ease out
+    float position = sin(progress * PI - PI/2) / 2 * 0.5;
+    float size = sin(progress * PI);
+    float px = ((1-position) * x1) + (position * x2);
+    float py = ((1-position) * y1) + (position * y2);
+    noStroke();
+    fill(255*5/8, 200, 150 + 100 * size, 20 + size * 50); // blue
+    dot(px, py, 0, size * size * 5);
   }
 
+  // Stations
+  noStroke();
+  for (Location l : locations.values()) {
+    if (l.inventory > 0) {
+      fill(256 / 4, 250, 200, 200); // green
+    } else {
+      fill(0, 200, 250, 200); // red
+    }
+    dot(projectLat(l.lat), projectLon(l.lon), 0, 2 + dotSize * abs(l.inventory));
+  }
+  
   // End model
   popMatrix();
 
   // Text panels, bars
   noStroke();
   fill(0, 0, 30, 100);
-  rect(15, 15, width-30, 50);
+  rect(15, 15, width-30, 42); // background panel
+
   fill(255);
   text("FPS: " + frameRate, width-15-100, 30);
-  
-  fill(255);
-  text(slice.get(0).startDate.toString(), 15, 30);
-  text("Bikes in motion: " + slice.size(), 15, 45);
-  fill(255/2, 100, 100);
-  rect(15, 50, slice.size(), 10);
-  float curPos = (float)(currentSliceIdx - minSliceIdx) / (maxSliceIdx - minSliceIdx);
-  float h = 10f * slice.size() / 350;
-  rect(15 + curPos * (width-30), 75 - h, 5, h);
+  text(new Date(curTime).toString(), 15, 30);
+  text("Bikes in motion: " + activeJourneys.size(), 15, 45);
 
-  // Select next slice
-  currentSliceIdx++;
-  if (currentSliceIdx > maxSliceIdx) { // restart?
-    currentSliceIdx = minSliceIdx;
-    background(255);
-    resetInventory();
-  }
+  fill(255/2, 100, 100); // activity bar
+  float activity = (float)activeJourneys.size() / maxConcurrentJourneys; // [0..1]
+  rect(15, 50, activity * (width-30), 3);
+
+  fill(255/2, 100, 250); // histogram
+  float curPos = (float)loopTime / loopDuration;
+  float h = activity * 10;
+  rect(15 + curPos * (width-30), 70 - h, 5, h);
 }
 
 void dot(float x, float y, float z, float size) {
@@ -171,12 +197,15 @@ void dot(float x, float y, float z, float size) {
 //  translate(x, y, (z + minHeight)/2);
 //  box(cellSize * 0.999, cellSize * 0.999, z + minHeight);
 //  popMatrix();
-  beginShape();
-  vertex(x, y - size, z);
-  vertex(x + size, y, z);
-  vertex(x, y + size, z);
-  vertex(x - size, y, z);
-  endShape(CLOSE);
+
+//  beginShape();
+//  vertex(x, y - size, z);
+//  vertex(x + size, y, z);
+//  vertex(x, y + size, z);
+//  vertex(x - size, y, z);
+//  endShape(CLOSE);
+
+  ellipse(x, y, size, size);
 }
 
 void resetInventory() {
@@ -219,30 +248,17 @@ float projectLon(float lon) {
   return map(lon, minLon, maxLon, 0, height);
 }
 
-// Returns all journeys within the range [fromIdx, toIdx[
-List<Journey> getSlice(long fromIdx, long toIdx) {
-  Map<Long, List<Journey>> window = 
-    slices.subMap(currentSliceIdx, currentSliceIdx + sliceWidth);
-  List<Journey> slice = new ArrayList<Journey>();
-  for (List<Journey> l : window.values()) {
-    for (Journey j : l) {
-      slice.add(j);
-    }
-  }
-  return slice;
-}
-
-// Aggregate journeys by time slice.
-TreeMap<Long, List<Journey>> aggregateSlices(List<Journey> journeys) {
-  TreeMap<Long, List<Journey>> slices = new TreeMap<Long, List<Journey>>();
+// Get journeys active at a given point in time.
+// FIXME: this is really sloow... need a better data structure for fast lookups.
+// Maybe try segmenting it.
+List<Journey> getActiveJourneys(List<Journey> journeys, long time) {
+  List<Journey> active = new ArrayList<Journey>();
   for (Journey j : journeys) {
-    long slice = j.startDate.getTime() / 1000 / 60; // 1 minute slices
-    if (!slices.containsKey(slice)) {
-      slices.put(slice, new ArrayList<Journey>());
+    if (j.startDate.getTime() <= time && j.endDate.getTime() >= time) {
+      active.add(j);
     }
-    slices.get(slice).add(j);
   }
-  return slices;
+  return active;
 }
 
 // Data format:
