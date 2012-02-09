@@ -1,18 +1,23 @@
 
 // Visualising flows of bike journey data.
 // Step three: node activity.
+// - bike stand size/brightness: cumulative activity over time (number of journeys starting or ending here)
+// - bike stand hue: net inventory balance (red: net loss of bikes, green: net gain, yellow: net zero)
+// 
 // Martin Dittus, Feb 2012.
 
 // TODO:
-// - only increment activity counters at start/end of journey
-// - node size/brightness: activity over time (number of journeys starting or ending here)
-// - node hue: relative inventory balance (red/white/green)
 // - add basemap of boroughs
+// - render nodes and flows on separate textures, only blend them during display
+//   - only flows renderer should have motion blur
+// - render static histogram once, then overlay cursor with current position
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.text.SimpleDateFormat;
 
@@ -39,7 +44,8 @@ class Location {
   String name;
   float lat;
   float lon;
-  int inventory = 0;
+  int numSource = 0;
+  int numDest = 0;
 }
 
 static final SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -58,11 +64,12 @@ int mouseClickX;
 int mouseClickY;
 
 // Shapes
-float dotSize = 0.01f;
+float dotSize = 0.1f;
 
 Map<Integer, Location> locations = null;
 List<Flow> flows = null;
-List<Journey> journeys = null;
+Set<Journey> journeys = null;
+Set<Journey> activeJourneys = new HashSet<Journey>();
 
 // Loop state
 long minTime, maxTime;
@@ -83,7 +90,7 @@ void setup() {
     println("Locations: " + locations.size());
     flows = readFlows("flows.csv");
     println("Flows: " + flows.size());
-    journeys = readJourneys("journeys.csv");
+    journeys = new HashSet<Journey>(readJourneys("journeys.csv"));
     println("Journeys: " + journeys.size());
   } catch (ParseException e) {
     println(e);
@@ -110,7 +117,21 @@ void draw() {
     resetInventory();
   }
   long curTime = minTime + loopTime * (maxTime-minTime) / loopDuration; // time in model, in ms
-  List<Journey> activeJourneys = getActiveJourneys(journeys, curTime);
+  Set<Journey> oldActiveJourneys = activeJourneys;
+  activeJourneys = getActiveJourneys(journeys, curTime);
+  
+  // Update counters
+  Set<Journey> journeysAdded = new HashSet<Journey>(activeJourneys);
+  journeysAdded.removeAll(oldActiveJourneys);
+  for (Journey j : journeysAdded) {
+    locations.get(j.startStandId).numSource++;
+  }
+  
+  Set<Journey> journeysRemoved = new HashSet<Journey>(oldActiveJourneys);
+  journeysRemoved.removeAll(activeJourneys);
+  for (Journey j : journeysRemoved) {
+    locations.get(j.endStandId).numDest++;
+  }
   
   // Prepare display
 //  background(0);
@@ -129,12 +150,31 @@ void draw() {
 //  fill(0, 0, 0, 10);
 //  rect(0, 0, width, height);
 
+  // Stations
+  noStroke();
+  for (Location l : locations.values()) {
+    int inventory = l.numDest - l.numSource;
+    int activity = l.numSource + l.numDest;
+    float fillState = min(50, max(0, inventory + 25)) / 50f; // map [-50..50] inventory to [0..1] range
+    fill(
+      (256 / 4) * fillState, // map [0..1] to [red..green] colour
+      250, 200, 30);
+    
+//    if (inventory > 0) {
+//      fill(256 / 4, 250, 200, 100); // green
+//    } else {
+//      fill(0, 200, 250, 100); // red
+//    }
+    dot(projectLat(l.lat), projectLon(l.lon), 0, 2 + dotSize * activity);
+    
+    fill(0, 0, 150, 255);
+    dot(projectLat(l.lat), projectLon(l.lon), 0, 1);
+  }
+  
   // Journeys
   for (Journey j : activeJourneys) {
     Location a = locations.get(j.startStandId);
     Location b = locations.get(j.endStandId);
-    a.inventory--; // TODO: move this to first frame of this journey only
-    b.inventory++; // TODO: move this to last frame of this journey only
     
     // Path
     float x1 = projectLat(a.lat);
@@ -153,21 +193,17 @@ void draw() {
     float px = ((1-position) * x1) + (position * x2);
     float py = ((1-position) * y1) + (position * y2);
     noStroke();
-    fill(255*5/8, 200, 150 + 100 * size, 20 + size * 50); // blue
-    dot(px, py, 0, size * size * 5);
+
+    fill(255*5/8, 200, 150 + 100 * size, size * 1); // blue halo
+    dot(px, py, 0, size * size * size * 50);
+
+    fill(255*5/8, 200, 150 + 100 * size, 10 + size * 30); // blue body
+    dot(px, py, 0, size * size * size * 10);
+
+    fill(255*5/8, 50, 255 * size, 200 * size); // blue/white peak
+//    dot(px, py, 0, size * size * 2);
   }
 
-  // Stations
-  noStroke();
-  for (Location l : locations.values()) {
-    if (l.inventory > 0) {
-      fill(256 / 4, 250, 200, 200); // green
-    } else {
-      fill(0, 200, 250, 200); // red
-    }
-    dot(projectLat(l.lat), projectLon(l.lon), 0, 2 + dotSize * abs(l.inventory));
-  }
-  
   // End model
   popMatrix();
 
@@ -210,7 +246,8 @@ void dot(float x, float y, float z, float size) {
 
 void resetInventory() {
   for (Location l : locations.values()) {
-    l.inventory = 0;
+    l.numSource = 0;
+    l.numDest = 0;
   }
 }
 
@@ -251,8 +288,8 @@ float projectLon(float lon) {
 // Get journeys active at a given point in time.
 // FIXME: this is really sloow... need a better data structure for fast lookups.
 // Maybe try segmenting it.
-List<Journey> getActiveJourneys(List<Journey> journeys, long time) {
-  List<Journey> active = new ArrayList<Journey>();
+Set<Journey> getActiveJourneys(Set<Journey> journeys, long time) {
+  Set<Journey> active = new HashSet<Journey>();
   for (Journey j : journeys) {
     if (j.startDate.getTime() <= time && j.endDate.getTime() >= time) {
       active.add(j);
