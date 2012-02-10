@@ -1,16 +1,16 @@
 
 // Visualising flows of bike journey data.
 // Step three: bike stand activity, journeys in motion.
-// - bike stand size/brightness: turnover, cumulative activity (number of journeys starting or ending here)
+// - bike stand size: turnover, cumulative activity (number of journeys starting or ending here)
 // - bike stand hue: inventory, net gain/loss of bicycles (red: net loss, green: net gain, yellow: net zero)
 // 
 // Martin Dittus, Feb 2012.
 
 // TODO:
 // - add basemap of boroughs
-// - render nodes and flows on separate textures, only blend them during display
+// - render nodes and flows onto separate textures, only blend them during display
 //   - only flows renderer should have motion blur
-// - render static histogram once, then overlay cursor with current position
+// - render static histogram once, then overlay a cursor with current position
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -64,7 +64,7 @@ int mouseClickX;
 int mouseClickY;
 
 // Shapes
-float dotSize = 0.1f;
+float dotSize = 0.06f;
 
 Map<Integer, Location> locations = null;
 List<Flow> flows = null;
@@ -78,7 +78,7 @@ long loopDuration = 50 * 1000; // loop time in ms
 long loopStartTime;
 
 void setup() {
-  size(800, 600, OPENGL);
+  size(800, 800, OPENGL);
   calibrateProjection();
   noStroke();
   colorMode(HSB);
@@ -156,12 +156,12 @@ void draw() {
     int inventory = l.numDest - l.numSource;
     int turnover = l.numSource + l.numDest;
 
-    float fillState = min(50, max(0, inventory + 25)) / 50f; // map [-50..50] inventory to [0..1] range
+    float fillState = min(40, max(0, inventory + 20)) / 40f; // map [-40..40] inventory to [0..1] range
     fill(
       (256 / 4) * fillState, // map [0..1] to [red..green] colour
       250, 200, 130);
     
-    dot(projectLat(l.lat), projectLon(l.lon), 0, dotSize * turnover); // circle: turnover and inventory
+    dot(projectLat(l.lat), projectLon(l.lon), 0, 1 + dotSize * turnover); // circle: turnover and inventory
     
 //    fill(0, 0, 150, 255);
 //    dot(projectLat(l.lat), projectLon(l.lon), 0, 1); // dot: location
@@ -173,22 +173,27 @@ void draw() {
     Location b = locations.get(j.endStandId);
     
     // Path
-    float x1 = projectLat(a.lat);
-    float y1 = projectLon(a.lon);
-    float x2 = projectLat(b.lat);
-    float y2 = projectLon(b.lon);
+    float x1 = a.lat;
+    float y1 = a.lon;
+    float x2 = b.lat;
+    float y2 = b.lon;
     
     // Current position
     float progress = (float)(curTime - j.startDate.getTime()) / (j.endDate.getTime() - j.startDate.getTime());
     // Tween: ease in, ease out
     float position = sin(progress * PI - PI/2) / 2 * 0.5;
     float size = sin(progress * PI);
-    float px = ((1-position) * x1) + (position * x2);
-    float py = ((1-position) * y1) + (position * y2);
+    float px = projectLat(((1-position) * x1) + (position * x2));
+    float py = projectLon(((1-position) * y1) + (position * y2));
     noStroke();
 
-    fill(255*5/8, 200, 150 + 100 * size, size * 1); // blue halo
+    fill(255*5/8, 200, 150 + 100 * size, size * 1); // blue halo: trajectory
     if (size > 0.5) dot(px, py, 0, size * size * size * 50);
+//    fill(255*5/8, 200, 150 + 100 * progress, progress * 10); // blue halo: focus on destination
+//    dot(px, py, 0, progress * progress * 50);
+//    float s = 1 - progress;
+//    fill(255*5/8, 200, 150 + 100 * s, s * 10); // blue halo: focus on source
+//    dot(px, py, 0, s * 50);
 
     fill(255*5/8, 200, 150 + 100 * size, 0 + size * 10); // blue body
     if (size > 0.2) dot(px, py, 0, size * size * size * 10);
@@ -206,9 +211,22 @@ void draw() {
   rect(15, 15, width-30, 42); // background panel
 
   fill(255);
-  text("FPS: " + frameRate, width-15-100, 30);
-  text(new Date(curTime).toString(), 15, 30);
-  text("Bikes in motion: " + activeJourneys.size(), 15, 45);
+  text(df.format(new Date(curTime)), 15, 30);
+  text(String.format("Bikes in motion: %d", activeJourneys.size()), 15, 45);
+  text(String.format("FPS: %.1f", frameRate), width-15-70, 30);
+  
+  float distance = 0;
+  float duration = 0;
+  for (Journey j : activeJourneys) {
+    Location a = locations.get(j.startStandId);
+    Location b = locations.get(j.endStandId);
+    distance += sqrt(sq(a.lat-b.lat) + sq(a.lon-b.lon));
+    duration += (j.endDate.getTime() - j.startDate.getTime()) / 1000f;
+  }
+  distance /= activeJourneys.size();
+  duration /= activeJourneys.size() * 60;
+  text(String.format("Average journey distance: %.3f", distance), 200, 30);
+  text(String.format("Average journey duration: %.1f min", duration), 200, 45);
 
   fill(255/2, 100, 100); // activity bar
   float activity = (float)activeJourneys.size() / maxConcurrentJourneys; // [0..1]
