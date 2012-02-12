@@ -1,8 +1,8 @@
 
 // Visualising flows of bike journey data.
 // Step three: bike stand activity, journeys in motion.
-// - bike stand size: turnover, cumulative activity (number of journeys starting or ending here)
-// - bike stand hue: inventory, net gain/loss of bicycles (red: net loss, green: net gain, yellow: net zero)
+// - bike stand size: estimated inventory; or rather, cumulative growth since start of day: all incoming minus all outgoing bikes
+// - bike stand hue: gain/loss of bicycles within the last ~2h (green: gain, red: loss, yellow: no change)
 // 
 // Martin Dittus, Feb 2012.
 
@@ -15,6 +15,7 @@
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,6 +23,8 @@ import java.util.TreeMap;
 import java.text.SimpleDateFormat;
 
 import processing.opengl.PGraphicsOpenGL;
+
+import processing.video.*;
 
 class Flow {
   int startStandId;
@@ -37,6 +40,7 @@ class Journey {
   int startStandId;
   int endStandId;
   int duration;
+  float distance;
 }
 
 class Location {
@@ -46,15 +50,17 @@ class Location {
   float lon;
   int numSource = 0;
   int numDest = 0;
+  
+  LinkedList<Integer> inventoryHistory = new LinkedList<Integer>();
 }
 
 static final SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
 // Projection
-float minLat = 51.47;
-float maxLat = 51.55;
-float minLon = -0.22;
-float maxLon = -0.05;
+float minLat = 51.47 + 0.0133 + 0.002;
+float maxLat = 51.55 - 0.0133 + 0.002;
+float minLon = -0.22 + 0.0283 - 0.01;
+float maxLon = -0.05 - 0.0283 - 0.01;
 float projectionAspect = 1.0 / 3.0; // Aspect ratio: w/h
 
 float oRotX, rotX = 0;
@@ -76,6 +82,10 @@ long minTime, maxTime;
 int maxConcurrentJourneys = 871; //0;
 long loopDuration = 50 * 1000; // loop time in ms
 long loopStartTime;
+
+long currentTimeMillis;
+MovieMaker mm;
+boolean recordMovie = false;
 
 void setup() {
   size(800, 800, OPENGL);
@@ -102,20 +112,30 @@ void setup() {
     minTime = Math.min(minTime, j.startDate.getTime());
     maxTime = Math.max(maxTime, j.endDate.getTime());
 //    maxConcurrentJourneys = max(maxConcurrentJourneys, getActiveJourneys(journeys, j.startDate.getTime()).size());
+
+    // Precompute trip distances
+    Location a = locations.get(j.startStandId);
+    Location b = locations.get(j.endStandId);
+    j.distance = sqrt(sq(a.lat-b.lat) + sq(a.lon-b.lon));
   }
   println("Max concurrent journeys: " + maxConcurrentJourneys);
-  loopStartTime = System.currentTimeMillis();
+  loopStartTime = currentTimeMillis = 0; //System.currentTimeMillis();
 }
 
 void draw() {
-
   // Current state
   long loopTime; // playback time within loop, in ms
-  while ((loopTime = System.currentTimeMillis() - loopStartTime) > loopDuration) {
+  while ((loopTime = currentTimeMillis - loopStartTime) > loopDuration) {
+    if (mm != null) {
+      mm.finish();
+      System.exit(0);
+    }
     loopStartTime += loopDuration;
     background(255);
     resetInventory();
   }
+  currentTimeMillis += 1000 / 30;
+
   long curTime = minTime + loopTime * (maxTime-minTime) / loopDuration; // time in model, in ms
   Set<Journey> oldActiveJourneys = activeJourneys;
   activeJourneys = getActiveJourneys(journeys, curTime);
@@ -124,13 +144,15 @@ void draw() {
   Set<Journey> journeysAdded = new HashSet<Journey>(activeJourneys);
   journeysAdded.removeAll(oldActiveJourneys);
   for (Journey j : journeysAdded) {
-    locations.get(j.startStandId).numSource++;
+    Location l = locations.get(j.startStandId);
+    l.numSource++;
   }
   
   Set<Journey> journeysRemoved = new HashSet<Journey>(oldActiveJourneys);
   journeysRemoved.removeAll(activeJourneys);
   for (Journey j : journeysRemoved) {
-    locations.get(j.endStandId).numDest++;
+    Location l = locations.get(j.endStandId);
+    l.numDest++;
   }
   
   // Prepare display
@@ -154,15 +176,19 @@ void draw() {
   noStroke();
   for (Location l : locations.values()) {
     int inventory = l.numDest - l.numSource;
+    l.inventoryHistory.add(inventory);
     int turnover = l.numSource + l.numDest;
+    
+    int oldInventory = l.inventoryHistory.get(max(l.inventoryHistory.size() - 150, 0));
+    int inventoryDifference = inventory - oldInventory;
 
-    float fillState = min(40, max(0, inventory + 20)) / 40f; // map [-40..40] inventory to [0..1] range
+    float fillState = min(20, max(0, inventoryDifference + 10)) / 20f; // map [-20..20] inventory change to [0..1] range
     fill(
       (256 / 4) * fillState, // map [0..1] to [red..green] colour
       250, 200, 130);
-    
-    dot(projectLat(l.lat), projectLon(l.lon), 0, 1 + dotSize * turnover); // circle: turnover and inventory
-    
+//    dot(projectLat(l.lat), projectLon(l.lon), 0, 4 + dotSize * turnover); // circle: turnover and inventory
+    dot(projectLat(l.lat), projectLon(l.lon), 0, 1 + max(0, inventory + 6) / 2f); // circle: turnover and inventory
+
 //    fill(0, 0, 150, 255);
 //    dot(projectLat(l.lat), projectLon(l.lon), 0, 1); // dot: location
   }
@@ -181,7 +207,7 @@ void draw() {
     // Current position
     float progress = (float)(curTime - j.startDate.getTime()) / (j.endDate.getTime() - j.startDate.getTime());
     // Tween: ease in, ease out
-    float position = sin(progress * PI - PI/2) / 2 * 0.5;
+    float position = sin(progress * PI - PI/2) / 2 + 0.5;
     float size = sin(progress * PI);
     float px = projectLat(((1-position) * x1) + (position * x2));
     float py = projectLon(((1-position) * y1) + (position * y2));
@@ -213,20 +239,19 @@ void draw() {
   fill(255);
   text(df.format(new Date(curTime)), 15, 30);
   text(String.format("Bikes in motion: %d", activeJourneys.size()), 15, 45);
-  text(String.format("FPS: %.1f", frameRate), width-15-70, 30);
+  text("covspc.wordpress.com", width-15-140, 30);
+//  text(String.format("FPS: %.1f", frameRate), width-15-70, 45);
   
   float distance = 0;
   float duration = 0;
   for (Journey j : activeJourneys) {
-    Location a = locations.get(j.startStandId);
-    Location b = locations.get(j.endStandId);
-    distance += sqrt(sq(a.lat-b.lat) + sq(a.lon-b.lon));
-    duration += (j.endDate.getTime() - j.startDate.getTime()) / 1000f;
+    distance += j.distance;
+    duration += j.duration * 60;
   }
   distance /= activeJourneys.size();
   duration /= activeJourneys.size() * 60;
-  text(String.format("Average journey distance: %.3f", distance), 200, 30);
-  text(String.format("Average journey duration: %.1f min", duration), 200, 45);
+  text(String.format("Avg trip distance: %.3f", distance), 160, 30);
+  text(String.format("Avg trip duration: %.1f min", duration), 160, 45);
 
   fill(255/2, 100, 100); // activity bar
   float activity = (float)activeJourneys.size() / maxConcurrentJourneys; // [0..1]
@@ -236,6 +261,15 @@ void draw() {
   float curPos = (float)loopTime / loopDuration;
   float h = activity * 10;
   rect(15 + curPos * (width-30), 70 - h, 5, h);
+
+  if (recordMovie) {
+   if (mm==null) {
+      mm = new MovieMaker(this, width, height, 
+        "recording-" + System.currentTimeMillis() + ".mov",
+        30, MovieMaker.MOTION_JPEG_B, MovieMaker.BEST);
+    }
+    mm.addFrame();
+  }
 }
 
 void dot(float x, float y, float z, float size) {
@@ -278,10 +312,7 @@ void calibrateProjection() {
     maxLon += diff/2;
   } else {
     // extend viewport horizontally
-    println(viewportAspect);
-    println(windowAspect);
     float adjustedVPWidth = viewportHeight * windowAspect;
-    println(adjustedVPWidth);
     float diff = abs(adjustedVPWidth - viewportWidth);
     minLat -= diff/2;
     maxLat += diff/2;
