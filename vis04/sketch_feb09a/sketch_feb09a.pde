@@ -7,10 +7,14 @@
 // Martin Dittus, Feb 2012.
 
 // TODO:
-// - add basemap of boroughs
-// - render nodes and flows onto separate textures, only blend them during display
+// - test if journey duration (not distance) is location-specific; it is dependent on time of day
+// - find higher resolution basemap, maybe a river outline, parks etc
+// - inverted colour scheme: background white, darker journeys
+// - render basemap, nodes and flows onto separate textures, only blend them during display
 //   - only flows renderer should have motion blur
 // - render static histogram once, then overlay a cursor with current position
+// - implement zoom/pan
+//   - then show all of London as opening shot, but zoom in for animation
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -57,20 +61,27 @@ class Location {
 static final SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
 // Projection
-float minLat = 51.47 + 0.0133 + 0.002;
-float maxLat = 51.55 - 0.0133 + 0.002;
-float minLon = -0.22 + 0.0283 - 0.01;
-float maxLon = -0.05 - 0.0283 - 0.01;
-float projectionAspect = 1.0 / 3.0; // Aspect ratio: w/h
+//float minLat = 51.25;
+//float maxLat = 51.75;
+//float minLon = -0.22;
+//float maxLon = -0.05;
 
-float oRotX, rotX = 0;
-float oRotZ, rotZ = 0;
-boolean isDragging = false;
-int mouseClickX;
-int mouseClickY;
+//float minLat = 51.47;
+//float maxLat = 51.55 + 0.0133;
+//float minLon = -0.22;
+//float maxLon = -0.05;
+
+float minLat = 51.47 + 0.0133 + 0.002;
+float maxLat = 51.55 - 0.0133 + 0.005;
+float minLon = -0.22 + 0.01;
+float maxLon = -0.05 - 0.01;
+
+float projectionAspect = 3.0 / 1.7; // Aspect ratio: w/h
 
 // Shapes
 float dotSize = 0.06f;
+
+Map<String, List<PVector>> map = null;
 
 Map<Integer, Location> locations = null;
 List<Flow> flows = null;
@@ -83,12 +94,14 @@ int maxConcurrentJourneys = 871; //0;
 long loopDuration = 50 * 1000; // loop time in ms
 long loopStartTime;
 
+long inventoryChurnWindowDuration = loopDuration / 1000 * 3; // time between old and new inventory, in number of frames
+
 long currentTimeMillis;
-MovieMaker mm;
+MovieMaker mm = null;
 boolean recordMovie = false;
 
 void setup() {
-  size(800, 800, OPENGL);
+  size(800, 600, OPENGL);
   calibrateProjection();
   noStroke();
   colorMode(HSB);
@@ -96,6 +109,7 @@ void setup() {
 //  frameRate(20);
 
   try {
+    map = readMap("boroughs.csv");
     locations = readLocations("locations.csv");
     println("Locations: " + locations.size());
     flows = readFlows("flows.csv");
@@ -155,63 +169,93 @@ void draw() {
     l.numDest++;
   }
   
-  // Prepare display
-//  background(0);
-  noStroke();
-  fill(0, 0, 0, 10);
-//  fill(0, 0, 0, 255);
-  rect(0, 0, width, height);
-  
-  // Model
-  pushMatrix();
-//  rotateZ(-PI / 10);
-  translate(width / 2, height / 2);
-  rotateX(rotX);
-  rotateZ(rotZ);
-  translate(-width / 2, -height / 2);
-//  fill(0, 0, 0, 10);
-//  rect(0, 0, width, height);
-
-  // Stations
-  noStroke();
+  // Update inventory
   for (Location l : locations.values()) {
     int inventory = l.numDest - l.numSource;
     l.inventoryHistory.add(inventory);
-    int turnover = l.numSource + l.numDest;
-    
-    int oldInventory = l.inventoryHistory.get(max(l.inventoryHistory.size() - 150, 0));
+    while (l.inventoryHistory.size() > inventoryChurnWindowDuration) {
+      l.inventoryHistory.remove(0);
+    }
+  }
+  
+  // Prepare display
+  fill(0, 0, 0, 10);
+  rect(0, 0, width, height);
+  
+  // Basemap
+//  noFill();
+//  stroke(255 * 5 / 8, 50, 100, 2); // blue
+//  strokeWeight(4.5f);
+//  drawMap(map);
+//  noStroke();
+
+  // Model
+  drawStations(locations.values());
+  drawJourneys(activeJourneys, curTime);
+
+  // Text panel, bars
+  drawCaptions(activeJourneys, maxConcurrentJourneys, curTime, loopTime, loopDuration);
+
+  // Recording
+  if (recordMovie) {
+   if (mm==null) {
+      mm = new MovieMaker(this, width, height, 
+        "recording-" + System.currentTimeMillis() + ".mov",
+        30, MovieMaker.MOTION_JPEG_B, MovieMaker.BEST);
+    }
+    mm.addFrame();
+  }
+}
+
+void drawMap(Map<String, List<PVector>> map) {
+  for (List<PVector> poly : map.values()) {
+    beginShape();
+    for (PVector p : poly) {
+      vertex(projectLon(p.x), projectLat(p.y), 0);
+//      dot(x, y, 0, 4);
+    }
+    vertex(projectLon(poly.get(0).x), projectLat(poly.get(0).y), 0);
+    endShape(CLOSE);
+  }
+}
+
+void drawStations(Collection<Location> locations) {
+  for (Location l : locations) {
+    int oldInventory = l.inventoryHistory.getFirst();
+    int inventory = l.inventoryHistory.getLast();
     int inventoryDifference = inventory - oldInventory;
 
     float fillState = min(20, max(0, inventoryDifference + 10)) / 20f; // map [-20..20] inventory change to [0..1] range
     fill(
       (256 / 4) * fillState, // map [0..1] to [red..green] colour
       250, 200, 130);
-//    dot(projectLat(l.lat), projectLon(l.lon), 0, 4 + dotSize * turnover); // circle: turnover and inventory
-    dot(projectLat(l.lat), projectLon(l.lon), 0, 1 + max(0, inventory + 6) / 2f); // circle: turnover and inventory
+//    dot(projectLon(l.lon), projectLat(l.lat), 0, 4 + dotSize * turnover); // circle: turnover and inventory
+    dot(projectLon(l.lon), projectLat(l.lat), 0, 1 + max(0, inventory + 6) / 2f); // circle: inventory
 
 //    fill(0, 0, 150, 255);
-//    dot(projectLat(l.lat), projectLon(l.lon), 0, 1); // dot: location
+//    dot(projectLon(l.lon), projectLat(l.lat), 0, 1); // dot: location
   }
-  
-  // Journeys
-  for (Journey j : activeJourneys) {
+}
+
+// curTime: current model time, in ms since epoch
+void drawJourneys(Collection<Journey> journeys, long curTime) {
+  for (Journey j : journeys) {
     Location a = locations.get(j.startStandId);
     Location b = locations.get(j.endStandId);
     
     // Path
-    float x1 = a.lat;
-    float y1 = a.lon;
-    float x2 = b.lat;
-    float y2 = b.lon;
+    float x1 = a.lon;
+    float y1 = a.lat;
+    float x2 = b.lon;
+    float y2 = b.lat;
     
     // Current position
     float progress = (float)(curTime - j.startDate.getTime()) / (j.endDate.getTime() - j.startDate.getTime());
     // Tween: ease in, ease out
     float position = sin(progress * PI - PI/2) / 2 + 0.5;
     float size = sin(progress * PI);
-    float px = projectLat(((1-position) * x1) + (position * x2));
-    float py = projectLon(((1-position) * y1) + (position * y2));
-    noStroke();
+    float px = projectLon(((1-position) * x1) + (position * x2));
+    float py = projectLat(((1-position) * y1) + (position * y2));
 
     fill(255*5/8, 200, 150 + 100 * size, size * 1); // blue halo: trajectory
     if (size > 0.5) dot(px, py, 0, size * size * size * 50);
@@ -224,15 +268,16 @@ void draw() {
     fill(255*5/8, 200, 150 + 100 * size, 0 + size * 10); // blue body
     if (size > 0.2) dot(px, py, 0, size * size * size * 10);
 
-    fill(255*5/8, 50, 255 * size, 100 * size); // blue/white peak
-    dot(px, py, 0, size * size * 2);
+    fill(255*5/8, 50, 55 + 200 * size, 50 + 70 * size); // blue/white peak
+    dot(px, py, 0, 1 + size * size * 1.5);
   }
+}
 
-  // End model
-  popMatrix();
+void dot(float x, float y, float z, float size) {
+  ellipse(x, y, size, size);
+}
 
-  // Text panels, bars
-  noStroke();
+void drawCaptions(Collection<Journey> journeys, int maxConcurrentJourneys, long curTime, long loopTime, long loopDuration) {
   fill(0, 0, 30, 100);
   rect(15, 15, width-30, 42); // background panel
 
@@ -261,38 +306,14 @@ void draw() {
   float curPos = (float)loopTime / loopDuration;
   float h = activity * 10;
   rect(15 + curPos * (width-30), 70 - h, 5, h);
-
-  if (recordMovie) {
-   if (mm==null) {
-      mm = new MovieMaker(this, width, height, 
-        "recording-" + System.currentTimeMillis() + ".mov",
-        30, MovieMaker.MOTION_JPEG_B, MovieMaker.BEST);
-    }
-    mm.addFrame();
-  }
 }
 
-void dot(float x, float y, float z, float size) {
-//  pushMatrix();
-//  float minHeight = cellSize/10;
-//  translate(x, y, (z + minHeight)/2);
-//  box(cellSize * 0.999, cellSize * 0.999, z + minHeight);
-//  popMatrix();
-
-//  beginShape();
-//  vertex(x, y - size, z);
-//  vertex(x + size, y, z);
-//  vertex(x, y + size, z);
-//  vertex(x - size, y, z);
-//  endShape(CLOSE);
-
-  ellipse(x, y, size, size);
-}
 
 void resetInventory() {
   for (Location l : locations.values()) {
     l.numSource = 0;
     l.numDest = 0;
+    l.inventoryHistory.clear();
   }
 }
 
@@ -300,31 +321,31 @@ void resetInventory() {
 // so that the target area is fully visible, but aspect
 // ratios preserved during projection.
 void calibrateProjection() {
-  float viewportWidth = abs(maxLat-minLat);
-  float viewportHeight = abs(maxLon-minLon);
+  float viewportWidth = abs(maxLon-minLon);
+  float viewportHeight = abs(maxLat-minLat);
   float viewportAspect = viewportWidth / viewportHeight;
   float windowAspect = (float)width / height * projectionAspect;
   if (viewportAspect > windowAspect) {
     // extend viewport vertically
     float adjustedVPHeight = viewportWidth / windowAspect;
     float diff = adjustedVPHeight - viewportHeight;
-    minLon -= diff/2;
-    maxLon += diff/2;
+    minLat -= diff/2;
+    maxLat += diff/2;
   } else {
     // extend viewport horizontally
     float adjustedVPWidth = viewportHeight * windowAspect;
     float diff = abs(adjustedVPWidth - viewportWidth);
-    minLat -= diff/2;
-    maxLat += diff/2;
+    minLon -= diff/2;
+    maxLon += diff/2;
   }
 }
 
-float projectLat(float lat) {
-  return map(lat, minLat, maxLat, 0, width);
+float projectLon(float lon) {
+  return map(lon, minLon, maxLon, 0, width);
 }
 
-float projectLon(float lon) {
-  return map(lon, minLon, maxLon, 0, height);
+float projectLat(float lat) {
+  return map(lat, minLat, maxLat, height, 0);
 }
 
 // Get journeys active at a given point in time.
@@ -396,16 +417,24 @@ List<Journey> readJourneys(String filename) throws ParseException {
   return records;
 }
 
-void mousePressed() {
-  mouseClickX = mouseX;
-  mouseClickY = mouseY;
-  oRotX = rotX;
-  oRotZ = rotZ;
-}
-
-void mouseDragged() {
-  rotX = oRotX + (mouseClickY - mouseY) * PI / height;
-  rotZ = oRotZ + (mouseClickX - mouseX) * PI / width;
+// Data format:
+// id, name, lat, lon
+// 1,Bromley,541177.710938455,173555.745843674
+Map<String, List<PVector>> readMap(String filename) throws ParseException {
+  String[] lines = loadStrings(filename);
+  Map<String, List<PVector>> records = new HashMap<String, List<PVector>>();
+  for (int i=1; i<lines.length; i++) {
+    String[] col = split(lines[i], ",");
+    String name = col[1];
+    if (!records.containsKey(name)) {
+      records.put(name, new ArrayList<PVector>());
+    }
+    List<PVector> coords = records.get(name);
+    float lat = Float.parseFloat(col[2]);
+    float lon = Float.parseFloat(col[3]);
+    coords.add(new PVector(lon, lat));
+  }
+  return records;
 }
 
 void keyPressed() {
