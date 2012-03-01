@@ -1,3 +1,5 @@
+// Simple cellular automaton.
+// Martin Dittus, Feb 2012
 
 Cell[][] cells;
 int side = 200;

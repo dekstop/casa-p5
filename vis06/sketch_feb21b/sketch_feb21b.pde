@@ -1,3 +1,6 @@
+// Simple agent-based model.
+// Martin Dittus, Feb 2012
+
 ArrayList<Hunter> h = new ArrayList<Hunter>();
 
 void setup() {
