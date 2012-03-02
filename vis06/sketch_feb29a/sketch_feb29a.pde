@@ -11,7 +11,7 @@
 import processing.video.*;
 
 int d = 200; // CA size
-int n = 10;  // reorganise after n iterations
+int n = 11;  // reorganise after n iterations
 int counter = 0;
 
 List<CA> cas = new ArrayList<CA>();
@@ -23,11 +23,9 @@ void setup() {
   frameRate(10);
   colorMode(HSB);
 
-//  cas.add(new CA(d, n));
-
-  cas.add(new RandCA(d, n, 4, round(d*d * 0.10)));
+  cas.add(new CA(d, n));
+  cas.add(new RandCA(d, n, 4, round(d*d * 0.01)));
   cas.add(new RandCA(d, n, 4, round(d*d * 0.40)));
-  cas.add(new RandCA(d, n, 4, round(d*d * 0.60)));
 
   cas.add(new FillCA(d, n, 2));
   cas.add(new FillCA(d, n, 4));
@@ -45,7 +43,7 @@ void setup() {
 }
 
 void reset() {
-  float fillRate = 0.1 + random(0.5);
+  float fillRate = random(1);// 0.7 + random(0.2);
   for (CA ca : cas) {
     ca.reset(fillRate);
   }
@@ -120,7 +118,7 @@ void drawRate(int x, int y, int h, float rate) {
 void drawCounter(int x, int y, int r, float counter) {
   strokeWeight(5);
 
-  stroke(0, 0, 255, 200); // white
+  stroke(0, 0, 255, 150); // white
   ellipse(x, y, r, r);
 
   stroke(255/4, 255, 200, 200); // green
@@ -233,17 +231,33 @@ class CA {
           cells[i+1][j].present +
           cells[i][j+1].present;
         
-        if (localSum <= 0) {
-          cells[i][j].future = 0;
-        } else if (localSum > 0 && localSum < 2) {
-          cells[i][j].future = 0;
-        } else if (localSum >= 2 && localSum < 3) {
-          cells[i][j].future = 1;
-        } else if (localSum >= 3 && localSum < 4) {
-          cells[i][j].future = cells[i][j].present;
-        } else if (localSum>=4) {
-          cells[i][j].future = 1;
-        }
+          if (localSum < 2) {
+            cells[i][j].future = 0;
+          } else if (localSum >= 2 && localSum < 3) {
+            cells[i][j].future = 0;
+          } else if (localSum >= 3 && localSum < 4) {
+            cells[i][j].future = cells[i][j].present;
+          } else if (localSum>=4) {
+            cells[i][j].future = 1;
+          }
+          if (cells[i][j-1].present +
+            cells[i+1][j].present == 2) {
+            cells[i][j].future = 1;
+          } else if (cells[i-1][j].present +
+            cells[i][j+1].present == 0) {
+            cells[i][j].future = cells[i][j].present;
+          }
+//        if (localSum <= 0) {
+//          cells[i][j].future = 0;
+//        } else if (localSum > 0 && localSum < 2) {
+//          cells[i][j].future = 0;
+//        } else if (localSum >= 2 && localSum < 3) {
+//          cells[i][j].future = 1;
+//        } else if (localSum >= 3 && localSum < 4) {
+//          cells[i][j].future = cells[i][j].present;
+//        } else if (localSum>=4) {
+//          cells[i][j].future = 1;
+//        }
       }
     }
   }
