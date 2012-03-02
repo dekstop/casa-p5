@@ -1,4 +1,4 @@
-// Multiple cellular automata nested into processes of reorganisation:
+// Multiple cellular automata nested into processes of tile reorganisation:
 // - move some random tiles
 // - fill all tiles with dominant colour
 // - reorder all tiles in circular shape, based on tile fill state
@@ -8,10 +8,15 @@
 //
 // Martin Dittus, Feb 2012
 
-int d = 100; // CA size
-int n = 3;  // reorganise after n iterations
+import processing.video.*;
+
+int d = 200; // CA size
+int n = 10;  // reorganise after n iterations
+int counter = 0;
 
 List<CA> cas = new ArrayList<CA>();
+
+MovieMaker mm;
 
 void setup() {
   size(800, 600);
@@ -20,9 +25,9 @@ void setup() {
 
 //  cas.add(new CA(d, n));
 
-  cas.add(new RandCA(d, n, 4, 10));
-  cas.add(new RandCA(d, n, 4, 40));
-  cas.add(new RandCA(d, n, 4, 60));
+  cas.add(new RandCA(d, n, 4, round(d*d * 0.10)));
+  cas.add(new RandCA(d, n, 4, round(d*d * 0.40)));
+  cas.add(new RandCA(d, n, 4, round(d*d * 0.60)));
 
   cas.add(new FillCA(d, n, 2));
   cas.add(new FillCA(d, n, 4));
@@ -44,30 +49,87 @@ void reset() {
   for (CA ca : cas) {
     ca.reset(fillRate);
   }
-}
-
-void update() {
-  for (CA ca : cas) {
-    ca.advance();
-  }
+  counter = 0;
 }
 
 void draw() {
-  update();
-  noStroke();
+  
+  int totalChangeCount = 0;
 
+  noStroke();
+  noSmooth();
+
+  // Advance & draw CAs
   int x = 0;
   int y = 0;
-  int cellSize = 2;
+  int cellSize = 1;
   for (CA ca : cas) {
+    ca.advance();
+
     drawCA(ca, x, y, cellSize);
+
+    // Rate of change
+    float rate = (float)ca.getChangedCellCount() / (d * d);
+    drawRate(x, y, d*cellSize, rate);
+
+    totalChangeCount += ca.getChangedCellCount();
+    print(ca.getChangedCellCount() + " ");
+
+    // next slot
     y += cellSize * d;
     if (y >= height) {
       y = 0;
       x += cellSize * d;
     }
   }
+  println();
+
+  // Reorg counter
+  if ((++counter) % n == 0) {
+      counter = 0;
+  }
+  
+  smooth();
+  noFill();
+  drawCounter(width-50, 50, 30, (float)counter/n);
+  
+  // Record
+  if (mm!=null) {
+    mm.addFrame();
+  }
+
+  // Stagnated?
+  if (totalChangeCount < 10) {
+    println("Stagnated. Resetting...");
+    reset();
+  }
 }
+
+// Draw rate of change of a CA
+// x, y: top left corner of CA
+// rate: [0..1]
+void drawRate(int x, int y, int h, float rate) {
+  fill(255/4, 255, 200, 200); // green
+  rect(x, y + rate * h, 5, (1-rate) * h);
+}
+
+// Draw reorganisation countdown 
+// x, y: position
+// r: radius
+// counter: [0..1]
+void drawCounter(int x, int y, int r, float counter) {
+  strokeWeight(5);
+
+  stroke(0, 0, 255, 200); // white
+  ellipse(x, y, r, r);
+
+  stroke(255/4, 255, 200, 200); // green
+  if (counter==0) {
+    ellipse(x, y, r, r);
+  } else {
+    arc(x, y, r, r, -PI/2, -PI/2 + 2*PI * counter);
+  }
+} 
 
 void drawCA(CA ca, int x, int y, int cellSize) {
   for (int i=0; i<ca.cells.length; i++) {
@@ -81,6 +143,32 @@ void drawCA(CA ca, int x, int y, int cellSize) {
 void keyPressed() {
   switch (key) {
     case ' ': reset(); break;
+    case 'r':
+      if (mm==null) {
+        startRecording();
+      } else {
+        stopRecording();
+      }
+      break;
+  }
+}
+
+void stop() {
+  stopRecording();
+}
+
+void startRecording() {
+  println("Starting recording...");
+  mm = new MovieMaker(this, width, height, 
+    "recording-" + System.currentTimeMillis() + ".mov",
+    10, MovieMaker.MOTION_JPEG_B, MovieMaker.BEST);
+}
+
+void stopRecording() {
+  println("Stopping recording.");
+  if (mm!=null) {
+    mm.finish();
+    mm = null;
   }
 }
 
@@ -100,6 +188,7 @@ class CA {
   public Cell[][] cells;
   public int n;
   public int stepCounter = 0;
+  private int changedCellCount = 0; // cells changed since last iteration
   
   public CA(int d, int n) {
     cells = new Cell[d][d];
@@ -130,6 +219,7 @@ class CA {
     advanceCA();
     apply();
     if ((++stepCounter) % n == 0) {
+      stepCounter = 0;
       reorganise();
     }
   }
@@ -159,11 +249,19 @@ class CA {
   }
   
   protected void apply() {
+    changedCellCount = 0;
     for (int i=1; i<cells.length-1; i++) {
       for (int j=1; j<cells[i].length-1; j++) {
+        if (cells[i][j].present != cells[i][j].future) {
+          changedCellCount++;
+        }
         cells[i][j].present = cells[i][j].future;
       }
     }
+  }
+  
+  public int getChangedCellCount() {
+    return changedCellCount;
   }
 
   protected void reorganise() {
