@@ -32,9 +32,9 @@ void setup() {
   cas.add(new CircularCA(d, n, 4));
   cas.add(new CircularCA(d, n, 5));
 
-  cas.add(new RowCA(d, n));
-  cas.add(new RowCA(d, n));
-  cas.add(new RowCA(d, n));
+  cas.add(new RowCA(d, n, 1));
+  cas.add(new RowCA(d, n, 2));
+  cas.add(new RowCA(d, n, 4));
   
   reset();
 }
@@ -350,8 +350,8 @@ class CircularCA extends TiledCA {
  */
 class RowCA extends TiledCA {
 
-  public RowCA(int d, int n) {
-    super(d, n, d, 1);
+  public RowCA(int d, int n, int height) {
+    super(d, n, d, height);
   }
 
   protected List<Cell[][]> reorganiseTiles(List<Cell[][]> tiles) {
