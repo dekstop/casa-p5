@@ -1,16 +1,17 @@
-// Multiple cellular automata nested into processes of tile reorganisation:
-// - move some random tiles
-// - fill all tiles with dominant colour
-// - reorder all tiles in circular shape, based on tile fill state
-// - reorder all rows, based on row fill state
+// Multiple cellular automata interleaved with periodic processes of reorganisation:
+// * randomly move some tiles
+// * fill all tiles with their dominant colour
+// * rearrange all tiles in circular order
+// * sort all rows by colour
 //
-// On each iteration: progress CA. After n iterations: reorganise.
+// On each iteration: advance CA. After n iterations: reorganise.
 //
 // Martin Dittus, Feb 2012
 
 import processing.video.*;
 
 int d = 200; // CA size
+int cellSize = 1; // in pixels
 int n = 11;  // reorganise after n iterations
 int counter = 0;
 
@@ -60,7 +61,6 @@ void draw() {
   // Advance & draw CAs
   int x = 0;
   int y = 0;
-  int cellSize = 1;
   for (CA ca : cas) {
     ca.advance();
 
@@ -242,7 +242,7 @@ class CA {
           }
           if (cells[i][j-1].present +
             cells[i+1][j].present == 2) {
-            cells[i][j].future = 1;
+//            cells[i][j].future = (random(1) > 0.5 ? 1 : 0);
           } else if (cells[i-1][j].present +
             cells[i][j+1].present == 0) {
             cells[i][j].future = cells[i][j].present;
