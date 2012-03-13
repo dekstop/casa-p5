@@ -9,7 +9,7 @@
  */
 
 // Maze dimensions, in cells.
-int mazeW = 2;
+int mazeW = 5;
 int mazeH = 15;
 
 // Likelihood that adjacent cells are separated by a wall.
@@ -21,7 +21,8 @@ float minWallSize = 0.1;
 float maxWallSize = 0.7;
 
 // Agents.
-int numAgents = 100;
+int numAgents = 300;
+int numTargets = 5;
 
 // Larger agents will be faster.
 float minSize = 5;
@@ -33,7 +34,10 @@ float maxSpeed = 2;
 float aimAdjust = 0.2;
 
 // How keen are they to avoid collisions?
-float collisionAdjust = 0.9;
+float collisionAdjust = 0.2;
+
+// Stats.
+int numHistogramBins = 25;
 
 /*
  * Variables.
@@ -44,7 +48,7 @@ PVector mazePos;
 PVector mazeSize;
 
 PVector spawnPoint;
-PVector target;
+List<PVector> targets = new ArrayList<PVector>();
 
 int agentId = 0; // running counter
 List<Agent> agents = new ArrayList<Agent>();
@@ -77,7 +81,10 @@ void draw() {
   ellipse(spawnPoint.x, spawnPoint.y, 20, 20); // spawn point
   
   stroke(0, 0, 200, 100);
-  ellipse(target.x, target.y, 20, 20); // target
+  for (int i=0; i<targets.size(); i++) {
+    PVector target = targets.get(i);
+    ellipse(target.x, target.y, 20, 20); // target
+  }
 
   strokeWeight(1);
   
@@ -91,10 +98,9 @@ void draw() {
   fill(0, 0, 0, 100);
   noStroke();
   rect(10, 10, width-20, 20);
-  int numBins = 30;
-  int histW = round(width*0.2) / numBins * numBins;
+  int histW = round(width*0.2) / numHistogramBins * numHistogramBins;
   drawAgentHistogram(agents, 
-    numBins, // number of bins
+    numHistogramBins,
     width-12-histW, 12, 
     histW, 16);
 
@@ -112,10 +118,13 @@ void draw() {
   int numSpawned=0;
   while (agents.size() < numAgents && numSpawned<round(numAgents/100.0)) {
     float size = random(1);
-    size *= size * size * size * size; // few large ones
-    agents.add(makeAgent(size, new PVector(
-      spawnPoint.x + random(-10, 10), 
-      spawnPoint.y + random(-10, 10))));
+    size *= size * size * size * size; // agent size: few large ones, many small ones
+    PVector p = // spawn point
+      new PVector(
+        spawnPoint.x + random(-10, 10), 
+        spawnPoint.y + random(-10, 10));
+    PVector target = targets.get(floor(random(targets.size())));
+    agents.add(makeAgent(size, p, target));
     numSpawned++;
   }
 }
@@ -123,13 +132,22 @@ void draw() {
 void buildScene() {
   maze = new Maze(mazeW, mazeH, mazeWallP, minWallSize, maxWallSize);
   mazePos = new PVector(width * 0.3, height * 0.2);
-  mazeSize = new PVector(width * 0.12, height * 0.7);
+  mazeSize = new PVector(width * 0.4, height * 0.7);
 
   spawnPoint = new PVector(width * 0.16, height * 0.5);
-  target = new PVector(width * 0.8, height * 0.5);
+  
+  targets.clear();
+  for (int i=0; i<numTargets; i++) {
+    targets.add(new PVector(
+      random(width * 0.8, width * 0.9), 
+      random(height * 0.1, height*0.9)));
+  }
+    
+  agents.clear();
+  agentId = 0;
 }
 
-Agent makeAgent(float size, PVector p) {
+Agent makeAgent(float size, PVector p, PVector target) {
   return new Agent(agentId++, 
     map(size, 0, 1, minSpeed, maxSpeed), 
     map(size, 0, 1, minSize, maxSize), 
@@ -149,7 +167,7 @@ void drawAgentHistogram(List<Agent> agents, int numBins, float x, float y, float
   int maxCount = 0;
   // Build histogram.
   for (Agent a : agents) {
-    int bin = (int)map(a.hue, 0, 255, 0, numBins);
+    int bin = floor(map(a.hue, 0, 255, 0, numBins));
     generations[bin]++;
     maxCount = max(generations[bin], maxCount);
   }
@@ -245,9 +263,6 @@ class Maze {
         wallSize[i][j] = random(minWallSize, maxWallSize);
       }
     }
-    
-    agents.clear();
-    agentId = 0;
   }
   
   // Builds an initial maze graph where all cells still have four walls.
