@@ -167,7 +167,7 @@ void drawAgentHistogram(List<Agent> agents, int numBins, float x, float y, float
   int maxCount = 0;
   // Build histogram.
   for (Agent a : agents) {
-    int bin = floor(map(a.hue, 0, 255, 0, numBins));
+    int bin = floor(map(a.hue, 0, 255, 0, numBins-1));
     generations[bin]++;
     maxCount = max(generations[bin], maxCount);
   }
