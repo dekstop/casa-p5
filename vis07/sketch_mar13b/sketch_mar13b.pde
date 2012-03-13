@@ -9,16 +9,16 @@
  */
 
 // Maze dimensions, in cells.
-int mazeW = 5;
+int mazeW = 10;
 int mazeH = 15;
 
 // Likelihood that adjacent cells are separated by a wall.
 // This is used for the initial maze seed.
-float mazeWallP = 0.3;
+float mazeWallP = 0.2;
 
 // Wall width, relative to cell size. Sensible values: [0.1 .. 0.9]
 float minWallSize = 0.1;
-float maxWallSize = 0.7;
+float maxWallSize = 0.8;
 
 // Agents.
 int numAgents = 300;
@@ -34,7 +34,7 @@ float maxSpeed = 2;
 float aimAdjust = 0.2;
 
 // How keen are they to avoid collisions?
-float collisionAdjust = 0.2;
+float collisionAdjust = 0.3;
 
 // Stats.
 int numHistogramBins = 25;
@@ -70,7 +70,7 @@ void draw() {
   rect(0, 0, width, height);
   
   // Maze.
-  maze.draw(mazePos.x, mazePos.y, mazeSize.x, mazeSize.y);
+//  maze.draw(mazePos.x, mazePos.y, mazeSize.x, mazeSize.y);
 
   // Spawn point and target.
   smooth();
@@ -131,15 +131,15 @@ void draw() {
 
 void buildScene() {
   maze = new Maze(mazeW, mazeH, mazeWallP, minWallSize, maxWallSize);
-  mazePos = new PVector(width * 0.3, height * 0.2);
-  mazeSize = new PVector(width * 0.4, height * 0.7);
+  mazePos = new PVector(width * 0.3, height * 0.15);
+  mazeSize = new PVector(width * 0.4, height * 0.75);
 
   spawnPoint = new PVector(width * 0.16, height * 0.5);
   
   targets.clear();
   for (int i=0; i<numTargets; i++) {
     targets.add(new PVector(
-      random(width * 0.8, width * 0.9), 
+      random(width * 0.75, width * 0.9), 
       random(height * 0.1, height*0.9)));
   }
     
@@ -167,7 +167,7 @@ void drawAgentHistogram(List<Agent> agents, int numBins, float x, float y, float
   int maxCount = 0;
   // Build histogram.
   for (Agent a : agents) {
-    int bin = floor(map(a.hue, 0, 255, 0, numBins-1));
+    int bin = round(map(a.hue, 0, 255, 0, numBins-1));
     generations[bin]++;
     maxCount = max(generations[bin], maxCount);
   }
