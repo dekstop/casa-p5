@@ -4,25 +4,30 @@
 // Agents are coloured according to the time they were spawned.
 // Martin Dittus, March 2012.
 
+// TODO: wall collision checks when targeting, when avoiding other agents
+// TODO: better backing off function when hitting wall: e.g. iterate new random direction until not hitting a wall
+// TODO: calculate min wall thickness as max speed * x to avoid collision detection failures
+// TODO: smaller agents get repelled by larger agents
+
 /*
  * Constants.
  */
 
 // Maze dimensions, in cells.
-int mazeW = 10;
-int mazeH = 15;
+int mazeW = 7;
+int mazeH = 10;
 
 // Likelihood that adjacent cells are separated by a wall.
 // This is used for the initial maze seed.
-float mazeWallP = 0.2;
+float mazeWallP = 0.8;
 
 // Wall width, relative to cell size. Sensible values: [0.1 .. 0.9]
-float minWallSize = 0.1;
-float maxWallSize = 0.8;
+float minWallSize = 0.25;
+float maxWallSize = 0.7;
 
 // Agents.
-int numAgents = 300;
-int numTargets = 5;
+int numAgents = 400;
+int numTargets = 10;
 
 // Larger agents will be faster.
 float minSize = 5;
@@ -31,10 +36,10 @@ float minSpeed = 0.5;
 float maxSpeed = 2;
 
 // How quickly can they turn?
-float aimAdjust = 0.2;
+float aimAdjust = 0.9;
 
 // How keen are they to avoid collisions?
-float collisionAdjust = 0.3;
+float collisionAdjust = 0.7;
 
 // Stats.
 int numHistogramBins = 25;
@@ -70,7 +75,7 @@ void draw() {
   rect(0, 0, width, height);
   
   // Maze.
-//  maze.draw(mazePos.x, mazePos.y, mazeSize.x, mazeSize.y);
+  maze.draw(mazePos.x, mazePos.y, mazeSize.x, mazeSize.y);
 
   // Spawn point and target.
   smooth();
@@ -114,9 +119,9 @@ void draw() {
     }
   }
   
-  // Spawn new agents (1% max per iteration.)
+  // Spawn new agents (1% max per frame.)
   int numSpawned=0;
-  while (agents.size() < numAgents && numSpawned<round(numAgents/100.0)) {
+  while (agents.size() < numAgents && numSpawned<round(numAgents * 0.01)) {
     float size = random(1);
     size *= size * size * size * size; // agent size: few large ones, many small ones
     PVector p = // spawn point
@@ -134,13 +139,13 @@ void buildScene() {
   mazePos = new PVector(width * 0.3, height * 0.15);
   mazeSize = new PVector(width * 0.4, height * 0.75);
 
-  spawnPoint = new PVector(width * 0.16, height * 0.5);
+  spawnPoint = new PVector(width * 0.16, height * 0.8);
   
   targets.clear();
   for (int i=0; i<numTargets; i++) {
     targets.add(new PVector(
       random(width * 0.75, width * 0.9), 
-      random(height * 0.1, height*0.9)));
+      random(height * 0.1, height*0.5)));
   }
     
   agents.clear();
@@ -320,6 +325,7 @@ class Agent {
   float speed;
   float size;
   boolean arrived = false;
+  boolean isTrapped = false;
   
   public Agent(int id, float speed, float size, PVector p, PVector target) {
     this.id = id;
@@ -334,9 +340,11 @@ class Agent {
   }
   
   void move() {
-    aimAtTarget();
-    avoidCollision();
-    step();
+    if (!isTrapped) {
+      aimAtTarget();
+      avoidAgentCollision();
+      step();
+    }
     if (dist(p.x, p.y, target.x, target.y)<size) {
       arrived = true;
     }
@@ -356,16 +364,18 @@ class Agent {
     adjust.normalize();
     adjust.mult(aimAdjust);
     v.add(adjust);
+//    v = adjustForWallCollision(p, v, 1);
   }
   
-  protected void avoidCollision() {
+  protected void avoidAgentCollision() {
     for (Agent other : agents) {
        if (other!=this) {
-         if (dist(p.x, p.y, other.p.x, other.p.y) < max(this.size, other.size) * 2) {
-           PVector adjust = PVector.sub(p, other.p);
-           adjust.normalize();
-           adjust.mult(collisionAdjust);
-           v.add(adjust);
+         if (dist(p.x, p.y, other.p.x, other.p.y) < (this.size + other.size)) {
+           PVector repel = PVector.sub(p, other.p);
+           repel.normalize();
+           repel.mult(collisionAdjust);
+           v.add(repel);
+//           v = adjustForWallCollision(p, v, 1);
          }
        }
     }
@@ -374,25 +384,43 @@ class Agent {
   protected void step() {
     v.normalize();
     v.mult(speed);
-    p.add(adjustForCollision(p, v));
+    p.add(adjustForWallCollision(p, v, 1));
   }
   
   // Test if agent can move from p to p+v without colliding with a wall.
   // Will adjust v in case of collision. 
   // Returns new v.
-  protected PVector adjustForCollision(PVector p, PVector v) {
-    // This is primitive:
-    // - assumes walls are always thicker than v's magnitude.
-    // - can't determine collision angle
-    // TODO: switch to a raycasting approach instead.
+  // This is primitive:
+  // - assumes walls are always thicker than v's magnitude.
+  // - can't determine collision angle
+  // TODO: switch to a raycasting approach instead.
+  protected PVector adjustForWallCollision(PVector p, PVector direction, float repel) {
+    if (!isWall(PVector.add(p, direction))) {
+        isTrapped = false;
+        return direction; // Not a wall.
+    }
+    isTrapped = true;
+    
+    // Wall. Try a few random directions.
+    for (int i=0; i<5; i++) {
+      PVector v = new PVector(direction.x, direction.y);
+//      v.mult(-1); // back off
+      v.add(new PVector(random(-0.2, 0.2), random(-0.2, 0.2))); // random angle adjustment
+      v.normalize();
+      v.mult(speed * repel);
+      if (!isWall(PVector.add(p, v))) {
+        return v;
+      }
+    }
+    
+    // Give up: stay where you are.
+    return new PVector(0, 0);
+  }
+  
+  protected boolean isWall(PVector p) {
     PVector t = PVector.add(p, v);
     color c = get(round(t.x), round(t.y));
-    if (red(c)+green(c)+blue(c)==0) { // wall
-      v.mult(-1); // back off
-      v.add(new PVector(random(-speed/2, speed/2), random(-speed/2, speed/2)));
-      v.normalize();
-    }
-    return v;
+    return (red(c)+green(c)+blue(c) == 0);
   }
   
   void draw() {
@@ -400,7 +428,12 @@ class Agent {
     fill(hue, 255, 255, 200);
     ellipse(p.x, p.y, size, size);
 
-    stroke(hue, 255, 255, 100);
-    line(p.x, p.y, p.x + v.x*(minSize*3 + speed*2), p.y + v.y*(minSize*3 + speed*2));
+    if (isTrapped) {
+      fill(0);
+      ellipse(p.x, p.y, 3, 3);
+    } else {
+      stroke(hue, 255, 255, 100);
+      line(p.x, p.y, p.x + v.x*(minSize*3 + speed*2), p.y + v.y*(minSize*3 + speed*2));
+    }
   }
 }
