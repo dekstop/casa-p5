@@ -1,6 +1,7 @@
 
 // Swarm with spawning, seeking, primitive collision detection,
 // with a maze generator to generate obstacles.
+// Agents are coloured according to the time they were spawned.
 // Martin Dittus, March 2012.
 
 /*
@@ -42,6 +43,7 @@ Maze maze;
 PVector mazePos;
 PVector mazeSize;
 
+PVector spawnPoint;
 PVector target;
 
 int agentId = 0; // running counter
@@ -67,13 +69,16 @@ void draw() {
   maze.draw(mazePos.x, mazePos.y, mazeSize.x, mazeSize.y);
 
   // Spawn point and target.
+  smooth();
   noFill();
-  stroke(0, 0, 200, 100);
-  
-  rect(width/6-5, 30, 10, height-60); // spawn point
-  
   strokeWeight(5);
+  
+  stroke(id2hue(agentId), 200, 255, 255);
+  ellipse(spawnPoint.x, spawnPoint.y, 20, 20); // spawn point
+  
+  stroke(0, 0, 200, 100);
   ellipse(target.x, target.y, 20, 20); // target
+
   strokeWeight(1);
   
   // Agents
@@ -82,32 +87,80 @@ void draw() {
     a.draw();
   }
   
+  // Stats.
+  fill(0, 0, 0, 100);
+  noStroke();
+  rect(10, 10, width-20, 20);
+  int numBins = 30;
+  int histW = round(width*0.2) / numBins * numBins;
+  drawAgentHistogram(agents, 
+    numBins, // number of bins
+    width-12-histW, 12, 
+    histW, 16);
+
+  fill(0, 0, 255, 200);
+  text("Number of live agents: " + agents.size(), 15, 25);
+
+  // Remove agents that reached their target.  
   for (int i=0; i<agents.size(); i++) {
     if (agents.get(i).arrived) {
       agents.remove(i);
     }
   }
   
-  // Spawn 1% agents max per iteration
+  // Spawn new agents (1% max per iteration.)
   int numSpawned=0;
   while (agents.size() < numAgents && numSpawned<round(numAgents/100.0)) {
     float size = random(1);
     size *= size * size * size * size; // few large ones
-    agents.add(new Agent(agentId++, 
-      map(size, 0, 1, minSpeed, maxSpeed), 
-      map(size, 0, 1, minSize, maxSize), 
-      new PVector(width/6, random(30, height-30)),
-      target));
+    agents.add(makeAgent(size, new PVector(
+      spawnPoint.x + random(-10, 10), 
+      spawnPoint.y + random(-10, 10))));
     numSpawned++;
   }
 }
 
 void buildScene() {
   maze = new Maze(mazeW, mazeH, mazeWallP, minWallSize, maxWallSize);
-  mazePos = new PVector(width/3, height*0.1);
-  mazeSize = new PVector(width/8, height*0.8);
+  mazePos = new PVector(width * 0.3, height * 0.2);
+  mazeSize = new PVector(width * 0.12, height * 0.7);
 
-  target = new PVector(width*4/5, height/2);
+  spawnPoint = new PVector(width * 0.16, height * 0.5);
+  target = new PVector(width * 0.8, height * 0.5);
+}
+
+Agent makeAgent(float size, PVector p) {
+  return new Agent(agentId++, 
+    map(size, 0, 1, minSpeed, maxSpeed), 
+    map(size, 0, 1, minSize, maxSize), 
+    p,
+    target);
+}
+
+int id2hue(int id) {
+  return round((id * 0.5) % 255);
+}
+
+// Builds and draws a histogram of agent generations.
+// This allows to observe how quickly agents manage to find a target,
+// a result of the kinds of obstacles they are presented with.
+void drawAgentHistogram(List<Agent> agents, int numBins, float x, float y, float w, float h) {
+  int[] generations = new int[numBins];
+  int maxCount = 0;
+  // Build histogram.
+  for (Agent a : agents) {
+    int bin = (int)map(a.hue, 0, 255, 0, numBins);
+    generations[bin]++;
+    maxCount = max(generations[bin], maxCount);
+  }
+  
+  // Draw.
+  noStroke();
+  for (int bin=0; bin<numBins; bin++) {
+    fill(map(bin, 0, numBins, 0, 255), 255, 255, 200);
+    float height = (h-1) * generations[bin] / maxCount;
+    rect(x + bin*w/numBins, y + h-height, w/numBins, height + 1);
+  }
 }
 
 void keyPressed() {
@@ -255,7 +308,7 @@ class Agent {
   
   public Agent(int id, float speed, float size, PVector p, PVector target) {
     this.id = id;
-    this.hue = round((id * 0.5) % 255);
+    this.hue = id2hue(id);
     this.p = p;
     //target = new PVector(width*2/3, height/2 + random(-height/4, height/4));
     this.target = target;
@@ -269,7 +322,7 @@ class Agent {
     aimAtTarget();
     avoidCollision();
     step();
-    if (dist(p.x, p.y, target.x, target.y)<size*2) {
+    if (dist(p.x, p.y, target.x, target.y)<size) {
       arrived = true;
     }
   }
