@@ -1,7 +1,14 @@
 
-// Swarm with spawning, seeking, primitive collision detection,
-// with a maze generator to generate obstacles.
+// Swarm with spawning, seeking, "fly paper" traps, with a maze generator
+// to generate obstacles.
+//
 // Agents are coloured according to the time they were spawned.
+//
+// Builds and draws histograms of live agents, and agents that reached
+// their target. This allows to observe how quickly agents manage to 
+// find a target, a result of the kinds of obstacles they are presented 
+// with.
+//
 // Martin Dittus, March 2012.
 
 // TODO: wall collision checks when targeting, when avoiding other agents
@@ -19,14 +26,14 @@ int mazeH = 10;
 
 // Likelihood that adjacent cells are separated by a wall.
 // This is used for the initial maze seed.
-float mazeWallP = 0.8;
+float mazeWallP = 0.75;
 
 // Wall width, relative to cell size. Sensible values: [0.1 .. 0.9]
 float minWallSize = 0.25;
 float maxWallSize = 0.7;
 
 // Agents.
-int numAgents = 400;
+int numAgents = 800;
 int numTargets = 10;
 
 // Larger agents will be faster.
@@ -39,7 +46,7 @@ float maxSpeed = 2;
 float aimAdjust = 0.9;
 
 // How keen are they to avoid collisions?
-float collisionAdjust = 0.7;
+float collisionAdjust = 0.2;
 
 // Stats.
 int numHistogramBins = 25;
@@ -54,6 +61,7 @@ PVector mazeSize;
 
 PVector spawnPoint;
 List<PVector> targets = new ArrayList<PVector>();
+List<int[]> targetHist = new ArrayList<int[]>();
 
 int agentId = 0; // running counter
 List<Agent> agents = new ArrayList<Agent>();
@@ -98,30 +106,53 @@ void draw() {
     a.move();
     a.draw();
   }
-  
+
   // Stats.
   fill(0, 0, 0, 100);
   noStroke();
   rect(10, 10, width-20, 20);
-  int histW = round(width*0.2) / numHistogramBins * numHistogramBins;
-  drawAgentHistogram(agents, 
-    numHistogramBins,
-    width-12-histW, 12, 
-    histW, 16);
+  
+  int mainHistW = round(width*0.2) / numHistogramBins * numHistogramBins;
+  int targetHistW = mainHistW / 2;
+  
+  int[] agentHist = makeAgentHistogram(agents, numHistogramBins);
+  drawHistogram(
+    agentHist,
+    width - 12 - mainHistW, // - targetHistW*3 - 15*3, 
+    12, 
+    mainHistW, 16);
+
+  drawHistogram(
+    targetHist.get(0),
+//    width - 12 - targetHistW*3 - 15*2, 12, 
+    targets.get(0).x + 20, targets.get(0).y - 8,
+    targetHistW, 16);
+
+  drawHistogram(
+    targetHist.get(1),
+//    width - 12 - targetHistW*2 - 15, 12, 
+    targets.get(1).x + 20, targets.get(1).y - 8,
+    targetHistW, 16);
+
+  drawHistogram(
+    targetHist.get(2),
+//    width - 12 - targetHistW, 12, 
+    targets.get(2).x + 20, targets.get(2).y - 8,
+    targetHistW, 16);
 
   fill(0, 0, 255, 200);
-  text("Number of live agents: " + agents.size(), 15, 25);
+  text(agents.size() + " agents", 15, 25);
 
   // Remove agents that reached their target.  
   for (int i=0; i<agents.size(); i++) {
     if (agents.get(i).arrived) {
-      agents.remove(i);
+      Agent a = agents.remove(i);
+      addToTargetHist(a);
     }
   }
   
-  // Spawn new agents (1% max per frame.)
-  int numSpawned=0;
-  while (agents.size() < numAgents && numSpawned<round(numAgents * 0.01)) {
+  // Spawn new agents (at a moderate pace.)
+  if (agents.size() < numAgents && random(1)<0.3) {
     float size = random(1);
     size *= size * size * size * size; // agent size: few large ones, many small ones
     PVector p = // spawn point
@@ -130,23 +161,31 @@ void draw() {
         spawnPoint.y + random(-10, 10));
     PVector target = targets.get(floor(random(targets.size())));
     agents.add(makeAgent(size, p, target));
-    numSpawned++;
   }
 }
 
 void buildScene() {
   maze = new Maze(mazeW, mazeH, mazeWallP, minWallSize, maxWallSize);
-  mazePos = new PVector(width * 0.3, height * 0.15);
-  mazeSize = new PVector(width * 0.4, height * 0.75);
+  mazePos = new PVector(width * 0.3, height * 0.2);
+  mazeSize = new PVector(width * 0.4, height * 0.8);
 
   spawnPoint = new PVector(width * 0.16, height * 0.8);
   
   targets.clear();
-  for (int i=0; i<numTargets; i++) {
-    targets.add(new PVector(
-      random(width * 0.75, width * 0.9), 
-      random(height * 0.1, height*0.5)));
-  }
+  targets.add(new PVector( // top
+    random(width * 0.3, width * 0.7), 
+    random(height * 0.1, height * 0.15)));
+  targets.add(new PVector( // top right
+    random(width * 0.75, width * 0.85), 
+    random(height * 0.1, height * 0.4)));
+  targets.add(new PVector( // bottom right
+    random(width * 0.75, width * 0.85), 
+    random(height * 0.6, height * 0.9)));
+  
+  targetHist.clear();
+  targetHist.add(new int[numHistogramBins]);
+  targetHist.add(new int[numHistogramBins]);
+  targetHist.add(new int[numHistogramBins]);
     
   agents.clear();
   agentId = 0;
@@ -161,28 +200,40 @@ Agent makeAgent(float size, PVector p, PVector target) {
 }
 
 int id2hue(int id) {
-  return round((id * 0.5) % 255);
+  return round((id * 0.1) % 255);
 }
 
-// Builds and draws a histogram of agent generations.
-// This allows to observe how quickly agents manage to find a target,
-// a result of the kinds of obstacles they are presented with.
-void drawAgentHistogram(List<Agent> agents, int numBins, float x, float y, float w, float h) {
-  int[] generations = new int[numBins];
-  int maxCount = 0;
-  // Build histogram.
+int[] makeAgentHistogram(List<Agent> agents, int numBins) {
+  int[] hist = new int[numBins];
   for (Agent a : agents) {
-    int bin = round(map(a.hue, 0, 255, 0, numBins-1));
-    generations[bin]++;
-    maxCount = max(generations[bin], maxCount);
+    addToAgentHistogram(hist, a);
   }
-  
-  // Draw.
+  return hist;
+}
+
+void addToAgentHistogram(int[] hist, Agent a) {
+  int bin = round(map(a.hue, 0, 255, 0, hist.length-1));
+  hist[bin]++;
+}
+
+void drawHistogram(int[] hist, float x, float y, float w, float h) {
+  int maxCount = max(hist);
   noStroke();
-  for (int bin=0; bin<numBins; bin++) {
-    fill(map(bin, 0, numBins, 0, 255), 255, 255, 200);
-    float height = (h-1) * generations[bin] / maxCount;
-    rect(x + bin*w/numBins, y + h-height, w/numBins, height + 1);
+  for (int bin=0; bin<hist.length; bin++) {
+    fill(map(bin, 0, hist.length, 0, 255), 255, 255, 200);
+    float height = (h-1) * hist[bin] / maxCount;
+    rect(x + bin*w/hist.length, y + h-height, w/hist.length, height + 1);
+  }
+}
+
+// Add to target's histogram;
+void addToTargetHist(Agent a) {
+  PVector t = a.target;
+  for (int i=0; i<targets.size(); i++) {
+    if (targets.get(i)==t) {
+      addToAgentHistogram(targetHist.get(i), a);
+      return;
+    }
   }
 }
 
@@ -351,20 +402,12 @@ class Agent {
   }
   
   protected void aimAtTarget() {
-    // direction we should move in
-    PVector aim = PVector.sub(target, p);
-    aim.normalize();
-    
-    // actual direction
-    PVector curdir = v.get();
-    curdir.normalize();
-    
-    // correction course
-    PVector adjust = PVector.sub(aim, curdir);
+    PVector aim = PVector.sub(target, p); // direction we should move in
+//    aim.normalize();
+    PVector adjust = PVector.sub(aim, v); // actual direction -> correction course
     adjust.normalize();
-    adjust.mult(aimAdjust);
+    adjust.mult(aimAdjust); // degree of adjustment
     v.add(adjust);
-//    v = adjustForWallCollision(p, v, 1);
   }
   
   protected void avoidAgentCollision() {
@@ -375,7 +418,6 @@ class Agent {
            repel.normalize();
            repel.mult(collisionAdjust);
            v.add(repel);
-//           v = adjustForWallCollision(p, v, 1);
          }
        }
     }
@@ -396,16 +438,14 @@ class Agent {
   // TODO: switch to a raycasting approach instead.
   protected PVector adjustForWallCollision(PVector p, PVector direction, float repel) {
     if (!isWall(PVector.add(p, direction))) {
-        isTrapped = false;
         return direction; // Not a wall.
     }
-    isTrapped = true;
     
     // Wall. Try a few random directions.
     for (int i=0; i<5; i++) {
       PVector v = new PVector(direction.x, direction.y);
 //      v.mult(-1); // back off
-      v.add(new PVector(random(-0.2, 0.2), random(-0.2, 0.2))); // random angle adjustment
+      v.add(new PVector(random(-speed, speed), random(-speed, speed))); // random angle adjustment
       v.normalize();
       v.mult(speed * repel);
       if (!isWall(PVector.add(p, v))) {
@@ -413,6 +453,7 @@ class Agent {
       }
     }
     
+    isTrapped = true;
     // Give up: stay where you are.
     return new PVector(0, 0);
   }
