@@ -1,19 +1,26 @@
 
-// Swarm with spawning, seeking, starving, eating agent carcasses, with a maze generator
-// to generate obstacles.
+// Swarming agents that spawn, seek a target, navigate through terrain (they're 
+// fairly primitive though), avoid potential predators, starve, die, eat prey 
+// and carcasses. With a maze generator to make a terrain.
 //
-// Agents are coloured according to the time they were spawned.
+// Agents are coloured by generation (i.e., according to the time they were 
+// spawned), but lose saturation when they starve. Their target is determined 
+// at spawn time. They can grow by eating.
 //
-// Builds and draws histograms of live agents, and agents that reached
-// their target. This allows to observe how quickly agents manage to 
-// find a target, a result of the kinds of obstacles they are presented 
-// with.
+// A few histograms show live/dead/arrived agent counts per generation. This 
+// allows to observe how quickly agents manage to find their target, a function 
+// of the terrain.
+//
+// Press space key to start with a new terrain. With more complex terrains it's 
+// worth letting it run for a few minutes and see emerging zones (e.g. dead 
+// ends which results in starvation deaths, which provides food to grow; dense 
+// clusters where agents start panicking as there's no space to evade potential 
+// predators.)
 //
 // Martin Dittus, March 2012.
 
-// TODO: size histogram for agents that reached target.
-// TODO: starving agents should seek carcasses.
-// TODO: for wall collisions: switch to a raycasting approach instead...
+// TODO: starving agents should seek carcasses and prey, not just eat by happenstance.
+// TODO: for wall collisions: switch to a raycasting approach instead,
 // TODO: calculate min wall thickness as max speed * x to avoid wall collision detection failures.
 
 /*
@@ -22,21 +29,31 @@
 
 // Agents.
 int numAgents = 400;
-int agentLifetime = 3000; // max iterations (frames) per agent
+int agentLifetime = 3000; // lifetime in iterations (frames) per agent, can be extended by eating
+
+// At which remaining lifetime level do agents start eating smaller agents?
+float hungerThreshold = 0.2;
+
+// How much of an agent's speed and size is transferred when getting eaten?
+float agentNutritionRate = 0.1;
+
+// How much lifetime do agents get for eating?
+int eatingLifetime = agentLifetime / 3;
 
 // Larger agents will be faster.
 float minSize = 5;
 float maxSize = 10;
-float minSpeed = 0.5;
-float maxSpeed = 2;
+float minSpeed = 0.9;
+float maxSpeed = 1.4;
 
 // How quickly can they turn?
 float aimAdjust = 0.2;
 
 // Max proximity for agent collision checks, in relation to size of both agents.
-float collisionCheckProximity = 2.5;
+float collisionCheckProximity = 1.1;
 
 // How quick are they when avoiding collisions with larger agents?
+// This is relative to agent speed, and is added to it.
 float collisionAdjust = 0.4;
 
 // How many attempts per iteration at navigating around walls until giving up?
@@ -46,10 +63,7 @@ int numWallBounceAttempts = 15;
 // Max bounce speed = agent speed * numWallBounceAttempts ^ wallBouncePaceIncrease
 float wallBouncePaceIncrease = 1.1;
 
-// How much of an agent's speed and size is transferred when getting eaten?
-float agentNutritionRate = 0.1;
-
-// ...
+// Size of the agent targets.
 float targetSize = 20;
 
 // Stats.
@@ -63,47 +77,75 @@ int numHistogramBins = 25;
 static List<MazeModel> mazeModels = new ArrayList<MazeModel>();
 
 static {
-  mazeModels.add(new MazeModel(
+  mazeModels.add(new MazeModel( // "city model"
     11, // w
     15, // h
     0.2, // wallP
     0.2, // min wall size
     1.2 // max wall size
   ));
-  mazeModels.add(new MazeModel(
+  mazeModels.add(new MazeModel( // large "city model", may cover top target
+    5, // w
+    5, // h
+    0.9, // wallP
+    0.1, // min wall size
+    1.9 // max wall size
+  ));
+  mazeModels.add(new MazeModel( // maze with randomized small/medium-sized walls
     11, // w
     15, // h
     0.4, // wallP
     0.2, // min wall size
     0.5 // max wall size
   ));
-  mazeModels.add(new MazeModel(
-    8, // w
+  mazeModels.add(new MazeModel( // maze with medium-sized walls
+    9, // w
     11, // h
     0.9, // wallP
     0.5, // min wall size
     0.5 // max wall size
   ));
-  mazeModels.add(new MazeModel(
+  mazeModels.add(new MazeModel( // maze with few huge walls
     6, // w
     7, // h
     0.3, // wallP
     0.8, // min wall size
     0.8 // max wall size
   ));
-  mazeModels.add(new MazeModel(
+  mazeModels.add(new MazeModel( // randomly distributed squares
     60, // w
     70, // h
     0.02, // wallP
     2, // min wall size
     4 // max wall size
   ));
-  mazeModels.add(new MazeModel(
+  mazeModels.add(new MazeModel( // rectangular maze pattern
     15, // w
     18, // h
     0.3, // wallP
     0.4, // min wall size
     0.8 // max wall size
+  ));
+  mazeModels.add(new MazeModel( // few massive blocks, may cover top target
+    3, // w
+    3, // h
+    0.2, // wallP
+    0.5, // min wall size
+    0.9 // max wall size
+  ));
+  mazeModels.add(new MazeModel( // few medium-sized blocks
+    11, // w
+    15, // h
+    0.01, // wallP
+    0.5, // min wall size
+    1.2 // max wall size
+  ));
+  mazeModels.add(new MazeModel( // few small blocks; occasionally blank
+    22, // w
+    30, // h
+    0.002, // wallP
+    0.5, // min wall size
+    1.2 // max wall size
   ));
 }
 
@@ -124,10 +166,10 @@ List<Agent> agents = new ArrayList<Agent>();
 
 // Stats
 List<int[]> targetHist = new ArrayList<int[]>();
+List<Integer> targetCount = new ArrayList<Integer>();
 int[] deadAgentHist;
 int deadAgentCount;
 int eatenAgentCount;
-int targetAgentCount;
 
 /*
  * Main app.
@@ -136,6 +178,7 @@ int targetAgentCount;
 void setup() {
   colorMode(HSB);
   size(800, 600);
+//  size(1280, 800);
 
   buildScene();
 }
@@ -144,14 +187,14 @@ void buildScene() {
   // Model
   maze = new Maze(mazeModels.get(floor(random(mazeModels.size()))));
   mazePos = new PVector(width * 0.2, height * 0.225);
-  mazeSize = new PVector(width * 0.5, height * 0.7);
+  mazeSize = new PVector(width * 0.5, height * 0.675);
 
   spawnPoint = new PVector(width * 0.1, height * 0.8);
   
   targets.clear();
   targets.add(new PVector( // top
     random(width * 0.3, width * 0.7), 
-    random(height * 0.1, height * 0.15)));
+    random(height * 0.1, height * 0.1)));
   targets.add(new PVector( // top right
     random(width * 0.8, width * 0.85), 
     random(height * 0.1, height * 0.4)));
@@ -167,10 +210,13 @@ void buildScene() {
   targetHist.add(new int[numHistogramBins]);
   targetHist.add(new int[numHistogramBins]);
   targetHist.add(new int[numHistogramBins]);
+  targetCount.clear();
+  targetCount.add(0);
+  targetCount.add(0);
+  targetCount.add(0);
   deadAgentHist = new int[numHistogramBins];
   deadAgentCount = 0;
   eatenAgentCount = 0;
-  targetAgentCount = 0;
 }
 
 void draw() {
@@ -205,6 +251,11 @@ void draw() {
   for (Agent a : agents) {
     a.draw(); // Only draw after all have moved.
   }
+  cleanupAgents();
+
+  if (agents.size() < numAgents && random(1)<0.3) { // at a moderate pace
+    spawnAgent();
+  }
 
   // Stats.
   fill(0, 0, 0, 100);
@@ -224,8 +275,8 @@ void draw() {
   textAlign(LEFT);
   text((agents.size()-(deadAgentCount - eatenAgentCount)) + " live agents", 10 + mainHistW + 5, 25);
 
-  textAlign(CENTER);
-  text(targetAgentCount + " agents reached target", width/2, 25);
+//  textAlign(CENTER);
+//  text(targetAgentCount + " agents reached target", width/2, 25);
 
   drawHistogram(
     deadAgentHist,
@@ -236,45 +287,52 @@ void draw() {
   textAlign(RIGHT);
   text(deadAgentCount + " agents died", width - 12 - mainHistW - 10, 25);
 
-  drawHistogram(
-    targetHist.get(0),
-//    width - 12 - targetHistW*3 - 15*2, 12, 
-    targets.get(0).x + 20, targets.get(0).y - 8,
-    targetHistW, 16);
+  drawTargetStats(targets.get(0), targetHistW, 16, targetCount.get(0), targetHist.get(0));
+  drawTargetStats(targets.get(1), targetHistW, 16, targetCount.get(1), targetHist.get(1));
+  drawTargetStats(targets.get(2), targetHistW, 16, targetCount.get(2), targetHist.get(2));
+  
+  textAlign(RIGHT);
+  fill(0, 0, 255, 200);
+  text("covspc.wordpress.com", width-20, height-10);
+}
 
-  drawHistogram(
-    targetHist.get(1),
-//    width - 12 - targetHistW*2 - 15, 12, 
-    targets.get(1).x + 20, targets.get(1).y - 8,
-    targetHistW, 16);
-
-  drawHistogram(
-    targetHist.get(2),
-//    width - 12 - targetHistW, 12, 
-    targets.get(2).x + 20, targets.get(2).y - 8,
-    targetHistW, 16);
-
-  // Remove agents that reached their target, or have been eaten.  
+// Remove agents that reached their target, or have been eaten. 
+// Also increases some stats counters.
+// ("Dead agent" stats are updated by agents.)
+void cleanupAgents() {
   for (int i=0; i<agents.size(); i++) {
     if (agents.get(i).arrived) {
       Agent a = agents.remove(i);
-      addToTargetHist(a);
+      addToTargetStats(a);
     } else if (agents.get(i).hasBeenEaten) {
       agents.remove(i);
+      eatenAgentCount++;
     }
   }
-  
-  // Spawn new agents (at a moderate pace.)
-  if (agents.size() < numAgents && random(1)<0.3) {
-    float size = random(1);
-    size *= size * size * size * size; // agent size: few large ones, many small ones
-    PVector p = // spawn point
-      new PVector(
-        spawnPoint.x + random(-10, 10), 
-        spawnPoint.y + random(-10, 10));
-    PVector target = targets.get(floor(random(targets.size())));
-    agents.add(makeAgent(size, p, target));
+}
+
+// Add to target's histogram and counter.
+void addToTargetStats(Agent a) {
+  PVector t = a.target;
+  for (int i=0; i<targets.size(); i++) {
+    if (targets.get(i)==t) {
+      addToAgentHistogram(targetHist.get(i), a);
+      targetCount.set(i, targetCount.get(i) + 1);
+      return;
+    }
   }
+}
+
+// Make one new agent
+void spawnAgent() {
+  float size = random(1);
+  size *= size * size * size * size; // agent size: few large ones, many small ones
+  PVector p = // spawn point
+    new PVector(
+      spawnPoint.x + random(-10, 10), 
+      spawnPoint.y + random(-10, 10));
+  PVector target = targets.get(floor(random(targets.size())));
+  agents.add(makeAgent(size, p, target));
 }
 
 Agent makeAgent(float size, PVector p, PVector target) {
@@ -314,14 +372,15 @@ void drawHistogram(int[] hist, float x, float y, float w, float h) {
   }
 }
 
-// Add to target's histogram;
-void addToTargetHist(Agent a) {
-  PVector t = a.target;
-  for (int i=0; i<targets.size(); i++) {
-    if (targets.get(i)==t) {
-      addToAgentHistogram(targetHist.get(i), a);
-      return;
-    }
+void drawTargetStats(PVector target, int width, int height, int counter, int[] hist) {
+  drawHistogram(
+    hist,
+    target.x + 20, target.y - 8,
+    width, height);
+  if (counter > 0) {
+    fill(0, 0, 255, 200);
+    textAlign(LEFT);
+    text(counter, target.x + 20, target.y + 8  + 15);
   }
 }
 
@@ -424,7 +483,12 @@ class Maze {
     // randomise wall thickness
     for (int i=0; i<model.w+1; i++) {
       for (int j=0; j<model.h+1; j++) {
-        wallSize[i][j] = random(model.minWallStrength, model.maxWallStrength);
+        if (i==0 || i==model.w || j==0 || j==model.h) {
+          // outer walls: always min strength (so we don't overdraw too much.)
+          wallSize[i][j] = model.minWallStrength;
+        } else {
+          wallSize[i][j] = random(model.minWallStrength, model.maxWallStrength);
+        }
       }
     }
   }
@@ -495,7 +559,7 @@ class Agent {
     this.p = p;
     //target = new PVector(width*2/3, height/2 + random(-height/4, height/4));
     this.target = target;
-    v = new PVector(random(-10, 10), random(-10, 10));
+    v = new PVector(random(-1, 1), random(-1, 1));
     v.normalize();
     this.speed = speed;
     this.size = size;
@@ -508,27 +572,44 @@ class Agent {
       return;
     }
     aimAtTarget();
-    avoidAgentCollision();
+    handleAgentCollision();
     step();
-    if (dist(p.x, p.y, target.x, target.y)<size) {
+    if (dist(p.x, p.y, target.x, target.y)<min(size, targetSize)) {
       arrived = true;
-      targetAgentCount++;
     }
   }
   
   protected void markDead() {
     isDead = true; 
-    addToAgentHistogram(deadAgentHist, this);
     deadAgentCount++;
+    addToAgentHistogram(deadAgentHist, this);
   }
   
   protected void eat(Agent other) {
+    if (other.hasBeenEaten) {
+      return; // Someone else got here first.
+    }
     println(id + " eats " + other.id + ". Munch.");
     size += other.size * agentNutritionRate;
     speed += other.speed * agentNutritionRate;
-    lifetime = agentLifetime;
+    lifetime += eatingLifetime;
+    if (!other.isDead) {
+      lifetime += other.lifetime * agentNutritionRate;
+      other.markDead();
+    }
     other.hasBeenEaten = true;
-    eatenAgentCount++;
+  }
+  
+  // proximity must be [0..1], and proportional to distance.
+  //   Smaller numbers will increase the repelling force.
+  // forceSpread must be > 0 and should be <= 1
+  //   Smaller numbers limit how far repelling forces will reach.
+  protected void runFrom(Agent other, float proximity, float forceSpread) {
+    PVector repel = PVector.sub(p, other.p);
+    float force = pow(2, -proximity / forceSpread);
+    repel.normalize();
+    repel.mult(speed * (1 + collisionAdjust * force));
+    v.add(repel);
   }
   
   protected void aimAtTarget() {
@@ -537,30 +618,39 @@ class Agent {
     adjust.normalize();
     adjust.mult(aimAdjust); // degree of adjustment
     v.add(adjust);
+    v.normalize();
   }
   
-  protected void avoidAgentCollision() {
+  protected void handleAgentCollision() {
     for (Agent other : agents) {
-       if (other!=this) {
-         float d = dist(p.x, p.y, other.p.x, other.p.y);
-         if (d < (this.size + other.size) * collisionCheckProximity) { // approaching?
-           if (other.isDead && !other.hasBeenEaten && d <= this.size) { // touching, eatable and smaller?
-             // AH MUNNA EAT CHOO
-             eat(other);
-           } else if (this.size <= other.size) { // alive and larger?
-             // Avoid.
-             PVector repel = PVector.sub(p, other.p);
-             repel.normalize();
-             repel.mult(speed * collisionAdjust);
-             v.add(repel);
-           }
-         }
-       }
+      if (other!=this) {
+        float dist = dist(p.x, p.y, other.p.x, other.p.y);
+        float maxAvoidanceDist = (this.size + other.size) * collisionCheckProximity; 
+        if (dist < maxAvoidanceDist) { // approaching?
+          if (other.isDead && dist <= this.size) { // dead and touching?
+            // AH MUNNA EAT CHOO
+            eat(other);
+          } else if (this.size <= other.size) { // larger?
+            if (other.isDead) { // dead?
+              // try not to hit
+              runFrom(other, dist / maxAvoidanceDist, 0.1);
+            } else {
+              // RUUN.
+              runFrom(other, dist / maxAvoidanceDist, 1);
+            }
+          } else if (dist < size) { // alive, smaller, and touching?
+            if (lifetime <= agentLifetime * hungerThreshold) { // am I hungry?
+              // AH MUNNA EAT CHOO
+              eat(other);
+            }
+          }
+        }
+      }
     }
   }
   
   protected void step() {
-    v.normalize();
+//    v.normalize();
     v.mult(speed);
     v = adjustForWallCollision(p, v, 1);
     p.add(v);
@@ -613,12 +703,14 @@ class Agent {
     
     if (!isDead) {
       stroke(hue, sat, 255, 100);
+      strokeWeight(3);
       PVector beak = new PVector(v.x, v.y);
       beak.normalize();
-      beak.mult(minSize); // vector in direction v, but with size minSize
+      beak.mult(size); // vector in direction v, but with size size
       beak.add(v);
-      beak.mult(2);
+//      beak.mult(1.5);
       line(p.x, p.y, p.x + beak.x, p.y + beak.y);
+      strokeWeight(1);
     }
   }
 }
