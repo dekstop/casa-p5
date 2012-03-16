@@ -1,25 +1,22 @@
 
-// Swarming agents that spawn, seek a target, navigate through terrain (they're 
-// fairly primitive though), avoid potential predators, starve, die, eat prey 
-// and carcasses. With a maze generator to make a terrain.
+// Swarming agents that are spawned, seek a target, navigate through terrain 
+// (with fairly primitive means), avoid potential predators, starve, die, eat 
+// prey and carcasses. With a maze generator to make the terrain.
 //
 // Agents are coloured by generation (i.e., according to the time they were 
 // spawned), but lose saturation when they starve. Their target is determined 
-// at spawn time. They can grow by eating.
+// at spawn time. They can survive (and grow) by eating smaller agents, or
+// taking a bite off a carcass.
 //
-// Agents will avoid larger agents, and carcasses when they're not hungry (the 
-// repelling force is a power law distribution relative to agent sizes), but 
-// they won't notice walls until they bounce off them, or get stuck.
+// Agents will avoid larger live agents, and carcasses when they're not hungry
+// (the repelling force is a power law distribution relative to agent sizes), 
+// but they won't notice walls until they bounce off them, or get stuck.
 //
-// "Flypaper mode" makes agents stick to walls and die. This may allow new
-// agents to travel farther, since they will keep avoiding agent carcasses who 
-// now serve as "beacons" for nearby walls. Especially note the impact of 
-// flypaper mode on complex models, which are much harder to navigate.
-//
-// Note the interaction between walls and carcass prey: an agent may be tempted 
-// to eat a wall beacon carcass to survive, but this brings it in closer 
-// proximity with the wall, and makes it likely that it will itself get stuck 
-// and die.
+// Press the "f" key to toggle "flypaper mode", which makes agents stick to 
+// walls and die instantly. This may then allow new agents to travel farther, 
+// since they will keep avoiding agent carcasses who now serve as "beacons" for 
+// nearby walls. Especially note the impact of flypaper mode on complex terrain 
+// models which may be much harder to navigate.
 //
 // A few histograms show live/dead/arrived agent counts per generation. This 
 // allows to observe how quickly agents manage to find their target, a function 
@@ -27,15 +24,28 @@
 // mode, where it may take a few generations of dead "beacon" agents to mark a 
 // path along walls until new agents can pass.
 //
-// Press space key to start with a new terrain. With more complex terrains it's 
-// worth letting it run for a few minutes and see emerging zones, e.g.:
+// Press the space key to restart with a new terrain. The basis of these generated
+// terrain models is a maze generator, with a few additions. Wall strengths can
+// be randomised, and a post-processing step may remove random walls between cells
+// of the maze. Each terrain will be a variant of a number of preconfigured types.
+
+// With more complex terrains it is worth letting the model run for a few minutes 
+// to observe emerging zones, e.g.:
+// * The distribution of colour across the terrain which may indicate zones of
+//   faster or slower propagation.
 // * Groups of agents pushing other (smaller) agents in wrong directions until
 //   they get a chance to escape.
 // * Dense clusters between walls where agents start panicking as there's no 
 //   space to evade potential predators.
-// * Dead ends which results in starvation deaths, which provides food to grow.
+// * Dead ends which result in starvation deaths, which provides food to grow.
 //   This allows a few agents to escape once they have become large enough to
 //   move in larger steps.
+// * Also note the interaction between walls and carcass prey in flypaper mode: 
+//   an agent may be tempted to eat a wall beacon carcass to survive, but this 
+//   brings it in closer proximity with the wall, and makes it likely that it 
+//   will itself get stuck and die. This could be regarded as a form of "weary 
+//   desperation"...
+//
 //
 // Martin Dittus, March 2012.
 
@@ -94,8 +104,8 @@ float targetSize = 20;
 int numHistogramBins = 25;
 
 /*
- * Mazes. These are all generated. 
- * See MazeModel class below for description of parameters.  
+ * Mazes (terrain models.) These are preconfigured types of terrain models.
+ * See the MazeModel class below for a description of the parameters.  
  */
 
 static List<MazeModel> mazeModels = new ArrayList<MazeModel>();
