@@ -11,10 +11,10 @@
 //
 // Martin Dittus, March 2012.
 
+// TODO: size histogram for agents that reached target.
+// TODO: starving agents should seek carcasses.
 // TODO: for wall collisions: switch to a raycasting approach instead...
-// TODO: add wall collision checks when targeting, when avoiding other agents? Not just when moving.
-// TODO: calculate min wall thickness as max speed * x to avoid collision detection failures
-// TODO: have smaller agents be repelled by larger agents.
+// TODO: calculate min wall thickness as max speed * x to avoid wall collision detection failures.
 
 /*
  * Constants.
@@ -33,7 +33,10 @@ float maxSpeed = 2;
 // How quickly can they turn?
 float aimAdjust = 0.2;
 
-// How keen are they to avoid collisions?
+// Max proximity for agent collision checks, in relation to size of both agents.
+float collisionCheckProximity = 2.5;
+
+// How quick are they when avoiding collisions with larger agents?
 float collisionAdjust = 0.4;
 
 // How many attempts per iteration at navigating around walls until giving up?
@@ -60,41 +63,41 @@ int numHistogramBins = 25;
 static List<MazeModel> mazeModels = new ArrayList<MazeModel>();
 
 static {
-//  mazeModels.add(new MazeModel(
-//    11, // w
-//    15, // h
-//    0.2, // wallP
-//    0.2, // min wall size
-//    1.2 // max wall size
-//  ));
-//  mazeModels.add(new MazeModel(
-//    11, // w
-//    15, // h
-//    0.4, // wallP
-//    0.2, // min wall size
-//    0.5 // max wall size
-//  ));
-//  mazeModels.add(new MazeModel(
-//    8, // w
-//    11, // h
-//    0.9, // wallP
-//    0.5, // min wall size
-//    0.5 // max wall size
-//  ));
-//  mazeModels.add(new MazeModel(
-//    6, // w
-//    7, // h
-//    0.3, // wallP
-//    0.8, // min wall size
-//    0.8 // max wall size
-//  ));
-//  mazeModels.add(new MazeModel(
-//    60, // w
-//    70, // h
-//    0.02, // wallP
-//    2, // min wall size
-//    4 // max wall size
-//  ));
+  mazeModels.add(new MazeModel(
+    11, // w
+    15, // h
+    0.2, // wallP
+    0.2, // min wall size
+    1.2 // max wall size
+  ));
+  mazeModels.add(new MazeModel(
+    11, // w
+    15, // h
+    0.4, // wallP
+    0.2, // min wall size
+    0.5 // max wall size
+  ));
+  mazeModels.add(new MazeModel(
+    8, // w
+    11, // h
+    0.9, // wallP
+    0.5, // min wall size
+    0.5 // max wall size
+  ));
+  mazeModels.add(new MazeModel(
+    6, // w
+    7, // h
+    0.3, // wallP
+    0.8, // min wall size
+    0.8 // max wall size
+  ));
+  mazeModels.add(new MazeModel(
+    60, // w
+    70, // h
+    0.02, // wallP
+    2, // min wall size
+    4 // max wall size
+  ));
   mazeModels.add(new MazeModel(
     15, // w
     18, // h
@@ -115,14 +118,16 @@ PVector mazeSize;
 
 PVector spawnPoint;
 List<PVector> targets = new ArrayList<PVector>();
-List<int[]> targetHist = new ArrayList<int[]>();
 
 int agentId = 0; // running counter
 List<Agent> agents = new ArrayList<Agent>();
+
+// Stats
+List<int[]> targetHist = new ArrayList<int[]>();
 int[] deadAgentHist;
-int deadAgentCount = 0;
-int eatenAgentCount = 0;
-int targetAgentCount = 0;
+int deadAgentCount;
+int eatenAgentCount;
+int targetAgentCount;
 
 /*
  * Main app.
@@ -136,9 +141,10 @@ void setup() {
 }
 
 void buildScene() {
+  // Model
   maze = new Maze(mazeModels.get(floor(random(mazeModels.size()))));
-  mazePos = new PVector(width * 0.2, height * 0.2);
-  mazeSize = new PVector(width * 0.55, height * 0.75);
+  mazePos = new PVector(width * 0.2, height * 0.225);
+  mazeSize = new PVector(width * 0.5, height * 0.7);
 
   spawnPoint = new PVector(width * 0.1, height * 0.8);
   
@@ -151,18 +157,20 @@ void buildScene() {
     random(height * 0.1, height * 0.4)));
   targets.add(new PVector( // bottom right
     random(width * 0.8, width * 0.85), 
-    random(height * 0.6, height * 0.9)));
+    random(height * 0.5, height * 0.8)));
   
+  agents.clear();
+  agentId = 0;
+  
+  // Stats
   targetHist.clear();
   targetHist.add(new int[numHistogramBins]);
   targetHist.add(new int[numHistogramBins]);
   targetHist.add(new int[numHistogramBins]);
-    
-  agents.clear();
-  agentId = 0;
-  
   deadAgentHist = new int[numHistogramBins];
   deadAgentCount = 0;
+  eatenAgentCount = 0;
+  targetAgentCount = 0;
 }
 
 void draw() {
@@ -477,7 +485,6 @@ class Agent {
   float speed;
   float size;
   boolean arrived = false;
-  boolean isTrapped = false; // stuck at a wall?
   boolean isDead = false;
   boolean hasBeenEaten = false;
   
@@ -536,15 +543,15 @@ class Agent {
     for (Agent other : agents) {
        if (other!=this) {
          float d = dist(p.x, p.y, other.p.x, other.p.y);
-         if (d < (this.size + other.size)) {
-           if (other.isDead && !other.hasBeenEaten && d < this.size) {
+         if (d < (this.size + other.size) * collisionCheckProximity) { // approaching?
+           if (other.isDead && !other.hasBeenEaten && d <= this.size) { // touching, eatable and smaller?
              // AH MUNNA EAT CHOO
              eat(other);
-           } else {
+           } else if (this.size <= other.size) { // alive and larger?
              // Avoid.
              PVector repel = PVector.sub(p, other.p);
              repel.normalize();
-             repel.mult(collisionAdjust);
+             repel.mult(speed * collisionAdjust);
              v.add(repel);
            }
          }
@@ -567,12 +574,10 @@ class Agent {
   // - can't determine collision angle
   protected PVector adjustForWallCollision(PVector p, PVector direction, float repel) {
     if (!isWall(PVector.add(p, direction))) {
-        isTrapped = false;
         return direction; // Not a wall.
     }
     
     // Wall. Try a few random directions.
-    isTrapped = true;
     float vAdjust = speed;
     for (int i=0; i<numWallBounceAttempts; i++) {
       PVector v = new PVector(-direction.x, -direction.y); // back off
@@ -585,8 +590,6 @@ class Agent {
       vAdjust *= wallBouncePaceIncrease; // try harder next time...
     }
     
-//    markDead(); // died of panic...?!
-    
     // Give up: stay where you are, but set a new random target.
     target = targets.get(floor(random(targets.size())));
     println(id + " is trapped. Setting new target.");
@@ -594,9 +597,12 @@ class Agent {
   }
   
   protected boolean isWall(PVector p) {
+    if (p.x<0 || p.x>=width-1 || p.y<0 || p.y>=height-1) {
+      return false; // off-screen? -> no wall.
+    }
     PVector t = PVector.add(p, v);
     color c = get(round(t.x), round(t.y));
-    return (red(c)+green(c)+blue(c) == 0);
+    return (red(c)+green(c)+blue(c) == 0); // black pixel? -> wall.
   }
   
   void draw() {
@@ -605,20 +611,14 @@ class Agent {
     fill(hue, sat, 255, 200);
     ellipse(p.x, p.y, size, size);
     
-    if (isDead) {
-//      fill(0);
-//      ellipse(p.x, p.y, 3, 3);
-    } else {
+    if (!isDead) {
       stroke(hue, sat, 255, 100);
-      line(p.x, p.y, p.x + v.x*(minSize*3 + speed*2), p.y + v.y*(minSize*3 + speed*2));
+      PVector beak = new PVector(v.x, v.y);
+      beak.normalize();
+      beak.mult(minSize); // vector in direction v, but with size minSize
+      beak.add(v);
+      beak.mult(2);
+      line(p.x, p.y, p.x + beak.x, p.y + beak.y);
     }
-
-//    if (isTrapped) {
-//      stroke(0, 200, 255, 100);
-//      strokeWeight(3);
-//      noFill();
-//      ellipse(p.x, p.y, size * 2, size * 2);
-//      strokeWeight(1);
-//    }
   }
 }
