@@ -7,15 +7,35 @@
 // spawned), but lose saturation when they starve. Their target is determined 
 // at spawn time. They can grow by eating.
 //
+// Agents will avoid larger agents, and carcasses when they're not hungry (the 
+// repelling force is a power law distribution relative to agent sizes), but 
+// they won't notice walls until they bounce off them, or get stuck.
+//
+// "Flypaper mode" makes agents stick to walls and die. This may allow new
+// agents to travel farther, since they will keep avoiding agent carcasses who 
+// now serve as "beacons" for nearby walls. Especially note the impact of 
+// flypaper mode on complex models, which are much harder to navigate.
+//
+// Note the interaction between walls and carcass prey: an agent may be tempted 
+// to eat a wall beacon carcass to survive, but this brings it in closer 
+// proximity with the wall, and makes it likely that it will itself get stuck 
+// and die.
+//
 // A few histograms show live/dead/arrived agent counts per generation. This 
 // allows to observe how quickly agents manage to find their target, a function 
-// of the terrain.
+// of the terrain. The target histograms are especially interesting in flypaper 
+// mode, where it may take a few generations of dead "beacon" agents to mark a 
+// path along walls until new agents can pass.
 //
 // Press space key to start with a new terrain. With more complex terrains it's 
-// worth letting it run for a few minutes and see emerging zones (e.g. dead 
-// ends which results in starvation deaths, which provides food to grow; dense 
-// clusters where agents start panicking as there's no space to evade potential 
-// predators.)
+// worth letting it run for a few minutes and see emerging zones, e.g.:
+// * Groups of agents pushing other (smaller) agents in wrong directions until
+//   they get a chance to escape.
+// * Dense clusters between walls where agents start panicking as there's no 
+//   space to evade potential predators.
+// * Dead ends which results in starvation deaths, which provides food to grow.
+//   This allows a few agents to escape once they have become large enough to
+//   move in larger steps.
 //
 // Martin Dittus, March 2012.
 
@@ -39,6 +59,10 @@ float agentNutritionRate = 0.1;
 
 // How much lifetime do agents get for eating?
 int eatingLifetime = agentLifetime / 3;
+
+// Share of size that is chewed off dead agents.
+// Agents of size minSize will be eaten whole.
+float biteSize = 0.3;
 
 // Larger agents will be faster.
 float minSize = 5;
@@ -164,6 +188,8 @@ List<PVector> targets = new ArrayList<PVector>();
 int agentId = 0; // running counter
 List<Agent> agents = new ArrayList<Agent>();
 
+boolean flypaperMode = false; // stick to walls?
+
 // Stats
 List<int[]> targetHist = new ArrayList<int[]>();
 List<Integer> targetCount = new ArrayList<Integer>();
@@ -181,13 +207,17 @@ void setup() {
 //  size(1280, 800);
 
   buildScene();
+  
+  spawnAgent();
+  Agent a = agents.get(0);
+  println(a.isWall(new PVector(324.16608, 598.58887)));
 }
 
 void buildScene() {
   // Model
   maze = new Maze(mazeModels.get(floor(random(mazeModels.size()))));
   mazePos = new PVector(width * 0.2, height * 0.225);
-  mazeSize = new PVector(width * 0.5, height * 0.675);
+  mazeSize = new PVector(width * 0.5, height * 0.65);
 
   spawnPoint = new PVector(width * 0.1, height * 0.8);
   
@@ -291,9 +321,16 @@ void draw() {
   drawTargetStats(targets.get(1), targetHistW, 16, targetCount.get(1), targetHist.get(1));
   drawTargetStats(targets.get(2), targetHistW, 16, targetCount.get(2), targetHist.get(2));
   
-  textAlign(RIGHT);
+  fill(0, 0, 0, 100);
+  noStroke();
+  rect(10, height-30, width-20, 20);
+
   fill(0, 0, 255, 200);
-  text("covspc.wordpress.com", width-20, height-10);
+  textAlign(LEFT);
+  text("[space] restart with new terrain  [f] turn flypaper mode " +
+    (flypaperMode ? "off" : "on"), 15, height-15);
+  textAlign(RIGHT);
+  text("covspc.wordpress.com", width-25, height-15);
 }
 
 // Remove agents that reached their target, or have been eaten. 
@@ -388,6 +425,9 @@ void keyPressed() {
   switch(key) {
     case ' ': 
       buildScene();
+      break;
+    case 'f': 
+      flypaperMode = !flypaperMode;
       break;
   }
 }
@@ -581,23 +621,38 @@ class Agent {
   
   protected void markDead() {
     isDead = true; 
+    lifetime = 0;
     deadAgentCount++;
     addToAgentHistogram(deadAgentHist, this);
   }
   
+  // Take a bite off a dead agent.
+  // If it reaches minSize: mark it for removal.
   protected void eat(Agent other) {
     if (other.hasBeenEaten) {
       return; // Someone else got here first.
     }
-    println(id + " eats " + other.id + ". Munch.");
-    size += other.size * agentNutritionRate;
-    speed += other.speed * agentNutritionRate;
-    lifetime += eatingLifetime;
-    if (!other.isDead) {
-      lifetime += other.lifetime * agentNutritionRate;
-      other.markDead();
+    println(id + " takes a bite off " + other.id + ". Munch.");
+    size += other.size * agentNutritionRate * biteSize;
+    speed += other.speed * agentNutritionRate * biteSize;
+    lifetime += eatingLifetime + other.lifetime * agentNutritionRate;
+    
+    if (other.size <= minSize) { // How big?
+      // Small, and either dead or alive. 
+      if (!other.isDead) {
+        other.markDead();
+      }
+      other.hasBeenEaten = true; // Eat whole
+      println(other.id + " has been eaten.");
+    } else if (other.isDead) { 
+      // Large carcass.
+      other.size -= other.size * biteSize; // Just take a bite off.
+      other.speed -= other.speed * biteSize;
     }
-    other.hasBeenEaten = true;
+  }
+  
+  boolean isHungry() {
+    return lifetime <= agentLifetime * hungerThreshold;
   }
   
   // proximity must be [0..1], and proportional to distance.
@@ -626,22 +681,19 @@ class Agent {
       if (other!=this) {
         float dist = dist(p.x, p.y, other.p.x, other.p.y);
         float maxAvoidanceDist = (this.size + other.size) * collisionCheckProximity; 
-        if (dist < maxAvoidanceDist) { // approaching?
-          if (other.isDead && dist <= this.size) { // dead and touching?
-            // AH MUNNA EAT CHOO
-            eat(other);
-          } else if (this.size <= other.size) { // larger?
-            if (other.isDead) { // dead?
-              // try not to hit
-              runFrom(other, dist / maxAvoidanceDist, 0.1);
-            } else {
-              // RUUN.
-              runFrom(other, dist / maxAvoidanceDist, 1);
-            }
-          } else if (dist < size) { // alive, smaller, and touching?
-            if (lifetime <= agentLifetime * hungerThreshold) { // am I hungry?
+        if (dist < maxAvoidanceDist) { // Approaching?
+          if (isHungry() && (other.isDead || other.size <= size)) { // Potential prey?
+            if (dist <= size + other.size) { // Touching?
               // AH MUNNA EAT CHOO
               eat(other);
+            } 
+          } else { // Potential predator?
+            if (other.isDead || other.size <= size) {
+              // Harmless. Try not to hit.
+              runFrom(other, dist / maxAvoidanceDist, 0.1);
+            } else {
+              // Potential predator. RUUN.
+              runFrom(other, dist / maxAvoidanceDist, 1);
             }
           }
         }
@@ -652,7 +704,7 @@ class Agent {
   protected void step() {
 //    v.normalize();
     v.mult(speed);
-    v = adjustForWallCollision(p, v, 1);
+    v = avoidWalls(p, v, 1);
     p.add(v);
   }
   
@@ -662,36 +714,56 @@ class Agent {
   // This is primitive:
   // - assumes walls are always thicker than v's magnitude.
   // - can't determine collision angle
-  protected PVector adjustForWallCollision(PVector p, PVector direction, float repel) {
+  protected PVector avoidWalls(PVector p, PVector direction, float repel) {
     if (!isWall(PVector.add(p, direction))) {
         return direction; // Not a wall.
     }
     
-    // Wall. Try a few random directions.
-    float vAdjust = speed;
-    for (int i=0; i<numWallBounceAttempts; i++) {
-      PVector v = new PVector(-direction.x, -direction.y); // back off
-      v.add(new PVector( // random angle adjustment
-        random(-vAdjust, vAdjust), 
-        random(-vAdjust, vAdjust))); 
-      if (!isWall(PVector.add(p, v))) {
-        return v;
+    // Approaching wall.
+    if (flypaperMode) {
+      // Stick.
+      markDead();
+      println(id + " is stuck on wall.");
+      // Find collision point.
+      float vAdjust = speed;
+      for (int i=0; i<numWallBounceAttempts; i++) {
+        PVector v = new PVector(direction.x, direction.y); // back off
+        v.normalize();
+        v.mult(vAdjust);
+        if (!isWall(PVector.add(p, v))) {
+          return v;
+        }
+        vAdjust /= wallBouncePaceIncrease; // try smaller steps next time...
       }
-      vAdjust *= wallBouncePaceIncrease; // try harder next time...
+      return new PVector(0, 0);
+    } else {
+      // Avoid. Try a few random directions.
+      float vAdjust = speed;
+      for (int i=0; i<numWallBounceAttempts; i++) {
+        PVector v = new PVector(-direction.x, -direction.y); // back off
+        v.add(new PVector( // random angle adjustment
+          random(-vAdjust, vAdjust), 
+          random(-vAdjust, vAdjust))); 
+        if (!isWall(PVector.add(p, v))) {
+          return v;
+        }
+        vAdjust *= wallBouncePaceIncrease; // try harder next time...
+      }
+      
+      // Give up: stay where you are, but set a new random target.
+      target = targets.get(floor(random(targets.size())));
+      println(id + " is trapped. Setting new target.");
+      return new PVector(0, 0);
     }
-    
-    // Give up: stay where you are, but set a new random target.
-    target = targets.get(floor(random(targets.size())));
-    println(id + " is trapped. Setting new target.");
-    return new PVector(0, 0);
   }
   
   protected boolean isWall(PVector p) {
-    if (p.x<0 || p.x>=width-1 || p.y<0 || p.y>=height-1) {
+    int x = round(p.x);
+    int y = round(p.y);
+    if (x<0 || x>width-1 || y<0 || y>height-1) {
       return false; // off-screen? -> no wall.
     }
-    PVector t = PVector.add(p, v);
-    color c = get(round(t.x), round(t.y));
+    color c = get(x, y);
     return (red(c)+green(c)+blue(c) == 0); // black pixel? -> wall.
   }
   
