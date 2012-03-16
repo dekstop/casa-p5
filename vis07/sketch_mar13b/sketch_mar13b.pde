@@ -10,13 +10,19 @@
 //
 // Agents will avoid larger live agents, and carcasses when they're not hungry
 // (the repelling force is a power law distribution relative to agent sizes), 
-// but they won't notice walls until they bounce off them, or get stuck.
+// but they won't notice walls until they hit them, and then bounce off or get 
+// stuck.
+//
+// There is a limit to the total number of live (and dead) agents on screen.
+// Once the limit has been reached, new agents can only be spawned when any
+// agent reaches their target and is removed. (For this reason targets can 
+// also be considered "breeding grounds", disregarding the fact that their 
+// location is different from the central spawning point.)
 //
 // Press the "f" key to toggle "flypaper mode", which makes agents stick to 
-// walls and die instantly. This may then allow new agents to travel farther, 
-// since they will keep avoiding agent carcasses who now serve as "beacons" for 
-// nearby walls. Especially note the impact of flypaper mode on complex terrain 
-// models which may be much harder to navigate.
+// walls and die instantly. In this mode complex terrains are much harder to 
+// vavigate. Since agents will avoid larger carcasses these now act as "beacons"
+// for nearby walls, and allow new agents to travel farther. 
 //
 // A few histograms show live/dead/arrived agent counts per generation. This 
 // allows to observe how quickly agents manage to find their target, a function 
@@ -24,18 +30,20 @@
 // mode, where it may take a few generations of dead "beacon" agents to mark a 
 // path along walls until new agents can pass.
 //
-// Press the space key to restart with a new terrain. The basis of these generated
-// terrain models is a maze generator, with a few additions. Wall strengths can
-// be randomised, and a post-processing step may remove random walls between cells
-// of the maze. Each terrain will be a variant of a number of preconfigured types.
+// Press the space bar to start again with a new terrain. The basis of these 
+// generated terrain models is a maze generator, with a few additions. Wall 
+// strengths can be randomised, and a post-processing step may remove random 
+// walls between cells of the maze. Each terrain will be a variant of a number 
+// of preconfigured types.
 
 // With more complex terrains it is worth letting the model run for a few minutes 
 // to observe emerging zones, e.g.:
 // * The distribution of colour across the terrain which may indicate zones of
 //   faster or slower propagation.
 // * Groups of agents pushing other (smaller) agents in wrong directions until
-//   they get a chance to escape.
-// * Dense clusters between walls where agents start panicking as there's no 
+//   they get a chance to escape. These "bullied" agents will wiggle their beak
+//   as they continuously attempt to change direction.
+// * Dense clusters between walls where agents start panicking as there is no 
 //   space to evade potential predators.
 // * Dead ends which result in starvation deaths, which provides food to grow.
 //   This allows a few agents to escape once they have become large enough to
@@ -46,11 +54,16 @@
 //   will itself get stuck and die. This could be regarded as a form of "weary 
 //   desperation"...
 //
+// A big limitation of this model is the absence of any "line of sight" logic.
+// As a result agents will head in the direction of their target even with 
+// walls between them. Additionally, in the case of a wall collision agents will 
+// bounce off in random directions as opposed to maintaining their general 
+// direction, or picking reasonable alternative routes.
 //
 // Martin Dittus, March 2012.
 
 // TODO: starving agents should seek carcasses and prey, not just eat by happenstance.
-// TODO: for wall collisions: switch to a raycasting approach instead,
+// TODO: for wall collisions: switch to a ray casting approach instead.
 // TODO: calculate min wall thickness as max speed * x to avoid wall collision detection failures.
 
 /*
@@ -87,8 +100,8 @@ float aimAdjust = 0.2;
 float collisionCheckProximity = 1.1;
 
 // How quick are they when avoiding collisions with larger agents?
-// This is relative to agent speed, and is added to it.
-float collisionAdjust = 0.4;
+// This is relative to normal agent speed.
+float collisionAdjust = 1.4;
 
 // How many attempts per iteration at navigating around walls until giving up?
 int numWallBounceAttempts = 15;
@@ -665,15 +678,17 @@ class Agent {
     return lifetime <= agentLifetime * hungerThreshold;
   }
   
-  // proximity must be [0..1], and proportional to distance.
+  // proximity must be > 0 and should be <= 1, and proportional to distance.
   //   Smaller numbers will increase the repelling force.
   // forceSpread must be > 0 and should be <= 1
-  //   Smaller numbers limit how far repelling forces will reach.
-  protected void runFrom(Agent other, float proximity, float forceSpread) {
+  //   Limits how far repelling forces will reach.
+  //   Smaller numbers result in a smaller force radius.
+  // collisionAdjust is the maximum pace, relative to agent speed.
+  protected void runFrom(Agent other, float proximity, float forceSpread, float collisionAdjust) {
     PVector repel = PVector.sub(p, other.p);
-    float force = pow(2, -proximity / forceSpread);
     repel.normalize();
-    repel.mult(speed * (1 + collisionAdjust * force));
+    float force = pow(2, -proximity / forceSpread);
+    repel.mult(speed * collisionAdjust * force);
     v.add(repel);
   }
   
@@ -698,12 +713,16 @@ class Agent {
               eat(other);
             } 
           } else { // Potential predator?
-            if (other.isDead || other.size <= size) {
-              // Harmless. Try not to hit.
-              runFrom(other, dist / maxAvoidanceDist, 0.1);
-            } else {
+            float proximity = dist / maxAvoidanceDist;
+            if (other.isDead) { 
+              // Dead. Try not to hit.
+              runFrom(other, proximity, 1, collisionAdjust);
+            } else if (other.size <= size) { 
+              // Harmless. Half-hearted attempt at making way.
+              runFrom(other, 1.5 - pow(1.5, - proximity), 1, collisionAdjust * 0.1);
+            } else { 
               // Potential predator. RUUN.
-              runFrom(other, dist / maxAvoidanceDist, 1);
+              runFrom(other, proximity, 2, collisionAdjust);
             }
           }
         }
@@ -733,7 +752,7 @@ class Agent {
     if (flypaperMode) {
       // Stick.
       markDead();
-      println(id + " is stuck on wall.");
+      println(id + " is stuck on a wall.");
       // Find collision point.
       float vAdjust = speed;
       for (int i=0; i<numWallBounceAttempts; i++) {
