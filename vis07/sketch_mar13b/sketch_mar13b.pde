@@ -152,14 +152,21 @@ static {
     0.5, // min wall size
     0.5 // max wall size
   ));
-  mazeModels.add(new MazeModel( // maze with few huge walls
+  mazeModels.add(new MazeModel( // maze with a few larger walls
+    4, // w
+    4, // h
+    0.9, // wallP
+    0.3, // min wall size
+    0.3 // max wall size
+  ));
+  mazeModels.add(new MazeModel( // maze with huge walls and narrow paths
     6, // w
     7, // h
     0.3, // wallP
     0.8, // min wall size
     0.8 // max wall size
   ));
-  mazeModels.add(new MazeModel( // randomly distributed squares
+  mazeModels.add(new MazeModel( // canyons/hills (randomly distributed adjunct rectangles)
     60, // w
     70, // h
     0.02, // wallP
@@ -173,7 +180,7 @@ static {
     0.4, // min wall size
     0.8 // max wall size
   ));
-  mazeModels.add(new MazeModel( // few massive blocks, may cover top target
+  mazeModels.add(new MazeModel( // few massive blocks
     3, // w
     3, // h
     0.2, // wallP
