@@ -1,5 +1,5 @@
 
-// Swarm with spawning, seeking, "fly paper" traps, with a maze generator
+// Swarm with spawning, seeking, starving, eating agent carcasses, with a maze generator
 // to generate obstacles.
 //
 // Agents are coloured according to the time they were spawned.
@@ -11,30 +11,18 @@
 //
 // Martin Dittus, March 2012.
 
-// TODO: wall collision checks when targeting, when avoiding other agents
-// TODO: better backing off function when hitting wall: e.g. iterate new random direction until not hitting a wall
+// TODO: for wall collisions: switch to a raycasting approach instead...
+// TODO: add wall collision checks when targeting, when avoiding other agents? Not just when moving.
 // TODO: calculate min wall thickness as max speed * x to avoid collision detection failures
-// TODO: smaller agents get repelled by larger agents
+// TODO: have smaller agents be repelled by larger agents.
 
 /*
  * Constants.
  */
 
-// Maze dimensions, in cells.
-int mazeW = 7;
-int mazeH = 10;
-
-// Likelihood that adjacent cells are separated by a wall.
-// This is used for the initial maze seed.
-float mazeWallP = 0.75;
-
-// Wall width, relative to cell size. Sensible values: [0.1 .. 0.9]
-float minWallSize = 0.25;
-float maxWallSize = 0.7;
-
 // Agents.
-int numAgents = 800;
-int numTargets = 10;
+int numAgents = 400;
+int agentLifetime = 3000; // max iterations (frames) per agent
 
 // Larger agents will be faster.
 float minSize = 5;
@@ -43,13 +31,79 @@ float minSpeed = 0.5;
 float maxSpeed = 2;
 
 // How quickly can they turn?
-float aimAdjust = 0.9;
+float aimAdjust = 0.2;
 
 // How keen are they to avoid collisions?
-float collisionAdjust = 0.2;
+float collisionAdjust = 0.4;
+
+// How many attempts per iteration at navigating around walls until giving up?
+int numWallBounceAttempts = 15;
+
+// Rate at which bounce speed increases per attempt per iteration.
+// Max bounce speed = agent speed * numWallBounceAttempts ^ wallBouncePaceIncrease
+float wallBouncePaceIncrease = 1.1;
+
+// How much of an agent's speed and size is transferred when getting eaten?
+float agentNutritionRate = 0.1;
+
+// ...
+float targetSize = 20;
 
 // Stats.
 int numHistogramBins = 25;
+
+/*
+ * Mazes. These are all generated. 
+ * See MazeModel class below for description of parameters.  
+ */
+
+static List<MazeModel> mazeModels = new ArrayList<MazeModel>();
+
+static {
+//  mazeModels.add(new MazeModel(
+//    11, // w
+//    15, // h
+//    0.2, // wallP
+//    0.2, // min wall size
+//    1.2 // max wall size
+//  ));
+//  mazeModels.add(new MazeModel(
+//    11, // w
+//    15, // h
+//    0.4, // wallP
+//    0.2, // min wall size
+//    0.5 // max wall size
+//  ));
+//  mazeModels.add(new MazeModel(
+//    8, // w
+//    11, // h
+//    0.9, // wallP
+//    0.5, // min wall size
+//    0.5 // max wall size
+//  ));
+//  mazeModels.add(new MazeModel(
+//    6, // w
+//    7, // h
+//    0.3, // wallP
+//    0.8, // min wall size
+//    0.8 // max wall size
+//  ));
+//  mazeModels.add(new MazeModel(
+//    60, // w
+//    70, // h
+//    0.02, // wallP
+//    2, // min wall size
+//    4 // max wall size
+//  ));
+  mazeModels.add(new MazeModel(
+    15, // w
+    18, // h
+    0.3, // wallP
+    0.4, // min wall size
+    0.8 // max wall size
+  ));
+}
+
 
 /*
  * Variables.
@@ -65,6 +119,10 @@ List<int[]> targetHist = new ArrayList<int[]>();
 
 int agentId = 0; // running counter
 List<Agent> agents = new ArrayList<Agent>();
+int[] deadAgentHist;
+int deadAgentCount = 0;
+int eatenAgentCount = 0;
+int targetAgentCount = 0;
 
 /*
  * Main app.
@@ -73,7 +131,38 @@ List<Agent> agents = new ArrayList<Agent>();
 void setup() {
   colorMode(HSB);
   size(800, 600);
+
   buildScene();
+}
+
+void buildScene() {
+  maze = new Maze(mazeModels.get(floor(random(mazeModels.size()))));
+  mazePos = new PVector(width * 0.2, height * 0.2);
+  mazeSize = new PVector(width * 0.55, height * 0.75);
+
+  spawnPoint = new PVector(width * 0.1, height * 0.8);
+  
+  targets.clear();
+  targets.add(new PVector( // top
+    random(width * 0.3, width * 0.7), 
+    random(height * 0.1, height * 0.15)));
+  targets.add(new PVector( // top right
+    random(width * 0.8, width * 0.85), 
+    random(height * 0.1, height * 0.4)));
+  targets.add(new PVector( // bottom right
+    random(width * 0.8, width * 0.85), 
+    random(height * 0.6, height * 0.9)));
+  
+  targetHist.clear();
+  targetHist.add(new int[numHistogramBins]);
+  targetHist.add(new int[numHistogramBins]);
+  targetHist.add(new int[numHistogramBins]);
+    
+  agents.clear();
+  agentId = 0;
+  
+  deadAgentHist = new int[numHistogramBins];
+  deadAgentCount = 0;
 }
 
 void draw() {
@@ -96,7 +185,7 @@ void draw() {
   stroke(0, 0, 200, 100);
   for (int i=0; i<targets.size(); i++) {
     PVector target = targets.get(i);
-    ellipse(target.x, target.y, 20, 20); // target
+    ellipse(target.x, target.y, targetSize, targetSize); // target
   }
 
   strokeWeight(1);
@@ -104,7 +193,9 @@ void draw() {
   // Agents
   for (Agent a : agents) {
     a.move();
-    a.draw();
+  }
+  for (Agent a : agents) {
+    a.draw(); // Only draw after all have moved.
   }
 
   // Stats.
@@ -118,9 +209,24 @@ void draw() {
   int[] agentHist = makeAgentHistogram(agents, numHistogramBins);
   drawHistogram(
     agentHist,
-    width - 12 - mainHistW, // - targetHistW*3 - 15*3, 
+    12,
     12, 
     mainHistW, 16);
+  fill(0, 0, 255, 200);
+  textAlign(LEFT);
+  text((agents.size()-(deadAgentCount - eatenAgentCount)) + " live agents", 10 + mainHistW + 5, 25);
+
+  textAlign(CENTER);
+  text(targetAgentCount + " agents reached target", width/2, 25);
+
+  drawHistogram(
+    deadAgentHist,
+    width - 12 - mainHistW,
+    12, 
+    mainHistW, 16);
+  fill(0, 0, 255, 200);
+  textAlign(RIGHT);
+  text(deadAgentCount + " agents died", width - 12 - mainHistW - 10, 25);
 
   drawHistogram(
     targetHist.get(0),
@@ -140,14 +246,13 @@ void draw() {
     targets.get(2).x + 20, targets.get(2).y - 8,
     targetHistW, 16);
 
-  fill(0, 0, 255, 200);
-  text(agents.size() + " agents", 15, 25);
-
-  // Remove agents that reached their target.  
+  // Remove agents that reached their target, or have been eaten.  
   for (int i=0; i<agents.size(); i++) {
     if (agents.get(i).arrived) {
       Agent a = agents.remove(i);
       addToTargetHist(a);
+    } else if (agents.get(i).hasBeenEaten) {
+      agents.remove(i);
     }
   }
   
@@ -162,33 +267,6 @@ void draw() {
     PVector target = targets.get(floor(random(targets.size())));
     agents.add(makeAgent(size, p, target));
   }
-}
-
-void buildScene() {
-  maze = new Maze(mazeW, mazeH, mazeWallP, minWallSize, maxWallSize);
-  mazePos = new PVector(width * 0.3, height * 0.2);
-  mazeSize = new PVector(width * 0.4, height * 0.8);
-
-  spawnPoint = new PVector(width * 0.16, height * 0.8);
-  
-  targets.clear();
-  targets.add(new PVector( // top
-    random(width * 0.3, width * 0.7), 
-    random(height * 0.1, height * 0.15)));
-  targets.add(new PVector( // top right
-    random(width * 0.75, width * 0.85), 
-    random(height * 0.1, height * 0.4)));
-  targets.add(new PVector( // bottom right
-    random(width * 0.75, width * 0.85), 
-    random(height * 0.6, height * 0.9)));
-  
-  targetHist.clear();
-  targetHist.add(new int[numHistogramBins]);
-  targetHist.add(new int[numHistogramBins]);
-  targetHist.add(new int[numHistogramBins]);
-    
-  agents.clear();
-  agentId = 0;
 }
 
 Agent makeAgent(float size, PVector p, PVector target) {
@@ -206,7 +284,9 @@ int id2hue(int id) {
 int[] makeAgentHistogram(List<Agent> agents, int numBins) {
   int[] hist = new int[numBins];
   for (Agent a : agents) {
-    addToAgentHistogram(hist, a);
+    if (!a.isDead) { // only add live ones
+      addToAgentHistogram(hist, a);
+    }
   }
   return hist;
 }
@@ -245,8 +325,34 @@ void keyPressed() {
   }
 }
 
+/** 
+ * Maze model, describes a type of maze that is then rendered by the Maze class.
+ */
+static class MazeModel {
+  
+  int w; // Grid width, in cells.
+  int h; // Grid height, in cells.
+
+  // Likelihood that adjacent cells are separated by a wall.
+  // This is used for the initial maze seed; further walls will be removed 
+  // when building the maze.
+  float wallP; 
+  
+  // Wall strength, relative to cell size. Sensible values: [0.1 .. 0.9]
+  float minWallStrength;
+  float maxWallStrength;
+  
+  public MazeModel(int w, int h, float wallP, float minWallStrength, float maxWallStrength) {
+    this.w = w;
+    this.h = h;
+    this.wallP = wallP;
+    this.minWallStrength = minWallStrength;
+    this.maxWallStrength = maxWallStrength;
+  }
+}
+
 /**
- * Maze class.
+ * Maze class, builds and draws mazes (a grid of interconnected cells.)
  * Uses a graph-based approach: cells are nodes, walls are edges.
  * First builds a fully connected graph, then recursively removes walls.
  * Randomises wall strength for further shape variation.
@@ -265,33 +371,27 @@ class Maze {
     }
   }
   
-  int w, h;
-  float wallP;
-  float minWallSize, maxWallSize;
+  MazeModel model;
   
   Node[][] maze;
   float[][] wallSize;
   
-  public Maze(int w, int h, float wallP, float minWallSize, float maxWallSize) {
-    this.w = w;
-    this.h = h;
-    this.wallP = wallP;
-    this.minWallSize = minWallSize;
-    this.maxWallSize = maxWallSize;
+  public Maze(MazeModel model) {
+    this.model = model;
     
-    this.maze = new Node[w+1][h+1];
-    this.wallSize = new float[w+1][h+1];
+    this.maze = new Node[model.w+1][model.h+1];
+    this.wallSize = new float[model.w+1][model.h+1];
     
     buildMaze();
   }
   
   void draw(float x, float y, float width, float height) {    
-    float cw = (float)width / w;
-    float ch = (float)height / h;
+    float cw = (float)width / model.w;
+    float ch = (float)height / model.h;
     noStroke();
     fill(0);
-    for (int i=0; i<w+1; i++) {
-      for (int j=0; j<h+1; j++) {
+    for (int i=0; i<model.w+1; i++) {
+      for (int j=0; j<model.h+1; j++) {
         Node a = maze[i][j];
         for (Node b : a.walls) {
           if (b.x>a.x || b.y>a.y) { // prevent double-drawing
@@ -314,24 +414,24 @@ class Maze {
     visitNode(maze[0][0]);
     
     // randomise wall thickness
-    for (int i=0; i<w+1; i++) {
-      for (int j=0; j<h+1; j++) {
-        wallSize[i][j] = random(minWallSize, maxWallSize);
+    for (int i=0; i<model.w+1; i++) {
+      for (int j=0; j<model.h+1; j++) {
+        wallSize[i][j] = random(model.minWallStrength, model.maxWallStrength);
       }
     }
   }
   
   // Builds an initial maze graph where all cells still have four walls.
   void buildGraph() {
-    for (int i=0; i<w+1; i++) {
-      for (int j=0; j<h+1; j++) {
+    for (int i=0; i<model.w+1; i++) {
+      for (int j=0; j<model.h+1; j++) {
         maze[i][j] = new Node(i, j);
       }
     }
-    for (int i=0; i<w+1; i++) {
-      for (int j=0; j<h+1; j++) {
-        if (i>0 && random(1) < wallP) addWall(maze[i][j], maze[i-1][j]);
-        if (j>0 && random(1) < wallP) addWall(maze[i][j], maze[i][j-1]);
+    for (int i=0; i<model.w+1; i++) {
+      for (int j=0; j<model.h+1; j++) {
+        if (i>0 && random(1) < model.wallP) addWall(maze[i][j], maze[i-1][j]);
+        if (j>0 && random(1) < model.wallP) addWall(maze[i][j], maze[i][j-1]);
       }
     }
   }
@@ -369,6 +469,7 @@ class Maze {
 
 class Agent {
   int id;
+  int lifetime;
   int hue;
   PVector p;
   PVector v;
@@ -376,10 +477,13 @@ class Agent {
   float speed;
   float size;
   boolean arrived = false;
-  boolean isTrapped = false;
+  boolean isTrapped = false; // stuck at a wall?
+  boolean isDead = false;
+  boolean hasBeenEaten = false;
   
   public Agent(int id, float speed, float size, PVector p, PVector target) {
     this.id = id;
+    this.lifetime = agentLifetime;
     this.hue = id2hue(id);
     this.p = p;
     //target = new PVector(width*2/3, height/2 + random(-height/4, height/4));
@@ -391,19 +495,37 @@ class Agent {
   }
   
   void move() {
-    if (!isTrapped) {
-      aimAtTarget();
-      avoidAgentCollision();
-      step();
+    if (isDead) return;
+    if (--lifetime == 0) {
+      markDead();
+      return;
     }
+    aimAtTarget();
+    avoidAgentCollision();
+    step();
     if (dist(p.x, p.y, target.x, target.y)<size) {
       arrived = true;
+      targetAgentCount++;
     }
+  }
+  
+  protected void markDead() {
+    isDead = true; 
+    addToAgentHistogram(deadAgentHist, this);
+    deadAgentCount++;
+  }
+  
+  protected void eat(Agent other) {
+    println(id + " eats " + other.id + ". Munch.");
+    size += other.size * agentNutritionRate;
+    speed += other.speed * agentNutritionRate;
+    lifetime = agentLifetime;
+    other.hasBeenEaten = true;
+    eatenAgentCount++;
   }
   
   protected void aimAtTarget() {
     PVector aim = PVector.sub(target, p); // direction we should move in
-//    aim.normalize();
     PVector adjust = PVector.sub(aim, v); // actual direction -> correction course
     adjust.normalize();
     adjust.mult(aimAdjust); // degree of adjustment
@@ -413,11 +535,18 @@ class Agent {
   protected void avoidAgentCollision() {
     for (Agent other : agents) {
        if (other!=this) {
-         if (dist(p.x, p.y, other.p.x, other.p.y) < (this.size + other.size)) {
-           PVector repel = PVector.sub(p, other.p);
-           repel.normalize();
-           repel.mult(collisionAdjust);
-           v.add(repel);
+         float d = dist(p.x, p.y, other.p.x, other.p.y);
+         if (d < (this.size + other.size)) {
+           if (other.isDead && !other.hasBeenEaten && d < this.size) {
+             // AH MUNNA EAT CHOO
+             eat(other);
+           } else {
+             // Avoid.
+             PVector repel = PVector.sub(p, other.p);
+             repel.normalize();
+             repel.mult(collisionAdjust);
+             v.add(repel);
+           }
          }
        }
     }
@@ -426,7 +555,8 @@ class Agent {
   protected void step() {
     v.normalize();
     v.mult(speed);
-    p.add(adjustForWallCollision(p, v, 1));
+    v = adjustForWallCollision(p, v, 1);
+    p.add(v);
   }
   
   // Test if agent can move from p to p+v without colliding with a wall.
@@ -435,26 +565,31 @@ class Agent {
   // This is primitive:
   // - assumes walls are always thicker than v's magnitude.
   // - can't determine collision angle
-  // TODO: switch to a raycasting approach instead.
   protected PVector adjustForWallCollision(PVector p, PVector direction, float repel) {
     if (!isWall(PVector.add(p, direction))) {
+        isTrapped = false;
         return direction; // Not a wall.
     }
     
     // Wall. Try a few random directions.
-    for (int i=0; i<5; i++) {
-      PVector v = new PVector(direction.x, direction.y);
-//      v.mult(-1); // back off
-      v.add(new PVector(random(-speed, speed), random(-speed, speed))); // random angle adjustment
-      v.normalize();
-      v.mult(speed * repel);
+    isTrapped = true;
+    float vAdjust = speed;
+    for (int i=0; i<numWallBounceAttempts; i++) {
+      PVector v = new PVector(-direction.x, -direction.y); // back off
+      v.add(new PVector( // random angle adjustment
+        random(-vAdjust, vAdjust), 
+        random(-vAdjust, vAdjust))); 
       if (!isWall(PVector.add(p, v))) {
         return v;
       }
+      vAdjust *= wallBouncePaceIncrease; // try harder next time...
     }
     
-    isTrapped = true;
-    // Give up: stay where you are.
+//    markDead(); // died of panic...?!
+    
+    // Give up: stay where you are, but set a new random target.
+    target = targets.get(floor(random(targets.size())));
+    println(id + " is trapped. Setting new target.");
     return new PVector(0, 0);
   }
   
@@ -466,15 +601,24 @@ class Agent {
   
   void draw() {
     noStroke();
-    fill(hue, 255, 255, 200);
+    float sat = 255.0 * (1 - pow(1 - (float)lifetime / agentLifetime, 10));
+    fill(hue, sat, 255, 200);
     ellipse(p.x, p.y, size, size);
-
-    if (isTrapped) {
-      fill(0);
-      ellipse(p.x, p.y, 3, 3);
+    
+    if (isDead) {
+//      fill(0);
+//      ellipse(p.x, p.y, 3, 3);
     } else {
-      stroke(hue, 255, 255, 100);
+      stroke(hue, sat, 255, 100);
       line(p.x, p.y, p.x + v.x*(minSize*3 + speed*2), p.y + v.y*(minSize*3 + speed*2));
     }
+
+//    if (isTrapped) {
+//      stroke(0, 200, 255, 100);
+//      strokeWeight(3);
+//      noFill();
+//      ellipse(p.x, p.y, size * 2, size * 2);
+//      strokeWeight(1);
+//    }
   }
 }
