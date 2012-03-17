@@ -53,6 +53,9 @@
 //   brings it in closer proximity with the wall, and makes it likely that it 
 //   will itself get stuck and die. This could be regarded as a form of "weary 
 //   desperation"...
+// * The system may reach an equilibrium where many agents are stuck, but enugh
+//   of them reach their targets that there is a steady trickle of renewal. 
+//   Such equilibria may have any number of live and stuck (or dead) agents.
 //
 // A big limitation of this model is the absence of any "line of sight" logic.
 // As a result agents will head in the direction of their target even with 
@@ -233,6 +236,7 @@ int eatenAgentCount;
 
 void setup() {
   colorMode(HSB);
+//  size(640, 480);
   size(800, 600);
 //  size(1280, 800);
 
@@ -244,8 +248,12 @@ void setup() {
 }
 
 void buildScene() {
+  buildScene(mazeModels.get(floor(random(mazeModels.size()))));
+}
+
+void buildScene(MazeModel model) {
   // Model
-  maze = new Maze(mazeModels.get(floor(random(mazeModels.size()))));
+  maze = new Maze(model);
   mazePos = new PVector(width * 0.2, height * 0.225);
   mazeSize = new PVector(width * 0.5, height * 0.65);
 
@@ -723,7 +731,7 @@ class Agent {
             float proximity = dist / maxAvoidanceDist;
             if (other.isDead) { 
               // Dead. Try not to hit.
-              runFrom(other, proximity, 1, collisionAdjust);
+              runFrom(other, proximity, 1, collisionAdjust * 0.5);
             } else if (other.size <= size) { 
               // Harmless. Half-hearted attempt at making way.
               runFrom(other, 1.5 - pow(1.5, - proximity), 1, collisionAdjust * 0.1);
