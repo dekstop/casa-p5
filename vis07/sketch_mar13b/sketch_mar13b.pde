@@ -505,7 +505,7 @@ void keyPressed() {
     case '7':
     case '8':
     case '9':
-      buildScene(mazeModels.get(Integer.parseInt("" + key)));
+      buildScene(mazeModels.get(Integer.parseInt("" + key) - 1));
       break;
     case '0':
       buildScene(mazeModels.get(10));
