@@ -69,6 +69,8 @@
 // TODO: for wall collisions: switch to a ray casting approach instead.
 // TODO: calculate min wall thickness as max speed * x to avoid wall collision detection failures.
 
+import processing.video.*;
+
 /*
  * Constants.
  */
@@ -230,11 +232,14 @@ int[] deadAgentHist;
 int deadAgentCount;
 int eatenAgentCount;
 
+MovieMaker mm;
+
 /*
  * Main app.
  */
 
 void setup() {
+  frameRate(30);
   colorMode(HSB);
 //  size(640, 480);
   size(800, 600);
@@ -369,6 +374,11 @@ void draw() {
     (flypaperMode ? "off" : "on"), 15, height-15);
   textAlign(RIGHT);
   text("covspc.wordpress.com", width-25, height-15);
+
+  // Record
+  if (mm!=null) {
+    mm.addFrame();
+  }
 }
 
 // Remove agents that reached their target, or have been eaten. 
@@ -459,6 +469,25 @@ void drawTargetStats(PVector target, int width, int height, int counter, int[] h
   }
 }
 
+void stop() {
+  stopRecording();
+}
+
+void startRecording() {
+  println("Starting recording...");
+  mm = new MovieMaker(this, width, height, 
+    "recording-" + System.currentTimeMillis() + ".mov",
+    30, MovieMaker.MOTION_JPEG_B, MovieMaker.BEST);
+}
+
+void stopRecording() {
+  println("Stopping recording.");
+  if (mm!=null) {
+    mm.finish();
+    mm = null;
+  }
+}
+
 void keyPressed() {
   switch(key) {
     case ' ': 
@@ -480,6 +509,13 @@ void keyPressed() {
       break;
     case '0':
       buildScene(mazeModels.get(10));
+      break;
+    case 'r':
+      if (mm==null) {
+        startRecording();
+      } else {
+        stopRecording();
+      }
       break;
   }
 }
