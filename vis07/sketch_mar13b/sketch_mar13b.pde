@@ -685,7 +685,6 @@ class Agent {
     this.lifetime = agentLifetime;
     this.hue = id2hue(id);
     this.p = p;
-    //target = new PVector(width*2/3, height/2 + random(-height/4, height/4));
     this.target = target;
     v = new PVector(random(-1, 1), random(-1, 1));
     v.normalize();
@@ -714,7 +713,7 @@ class Agent {
     addToAgentHistogram(deadAgentHist, this);
   }
   
-  // Take a bite off a dead agent.
+  // Take a bite off another agent, dead or alive.
   // If it reaches minSize: mark it for removal.
   protected void eat(Agent other) {
     if (other.hasBeenEaten) {
@@ -821,15 +820,15 @@ class Agent {
       // Find collision point.
       float vAdjust = speed;
       for (int i=0; i<numWallBounceAttempts; i++) {
-        PVector v = new PVector(direction.x, direction.y); // back off
+        PVector v = new PVector(direction.x, direction.y);
         v.normalize();
         v.mult(vAdjust);
         if (!isWall(PVector.add(p, v))) {
           return v;
         }
-        vAdjust /= wallBouncePaceIncrease; // try smaller steps next time...
+        vAdjust /= wallBouncePaceIncrease; // Try smaller steps next time...
       }
-      return new PVector(0, 0);
+      return new PVector(0, 0); // Only found walls. Just stay where you are then.
     } else {
       // Avoid. Try a few random directions.
       float vAdjust = speed;
@@ -851,6 +850,9 @@ class Agent {
     }
   }
   
+  // Every black pixel is regarded as an obstacle. For this reason wall
+  // detection must happen after walls have been drawn, but before agents
+  // are drawn since they can overlap with walls.
   protected boolean isWall(PVector p) {
     int x = round(p.x);
     int y = round(p.y);
@@ -874,7 +876,6 @@ class Agent {
       beak.normalize();
       beak.mult(size); // vector in direction v, but with size size
       beak.add(v);
-//      beak.mult(1.5);
       line(p.x, p.y, p.x + beak.x, p.y + beak.y);
       strokeWeight(1);
     }
