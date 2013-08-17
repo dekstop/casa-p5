@@ -16,6 +16,8 @@ import java.text.SimpleDateFormat;
 
 import processing.opengl.PGraphicsOpenGL;
 
+import processing.video.*;
+
 class Record {
   Date date;
   String lang;
@@ -59,6 +61,8 @@ float gridWidth = numCols * cellSize;
 float gridHeight = numRows * cellSize;
 float gridDepth = (gridWidth + gridHeight) / 2;
 
+int fontSize = 24;
+
 // Model
 List<Record> records;
 int[] counts; // histogram: aggregates counts per hour
@@ -89,11 +93,15 @@ int curIdx = 0;
 Float[] sourceState;
 Float[] targetState;
 long startBlendTime;
-long blendDuration = 300; // in ms
+long blendDuration = 700; // in ms
 boolean forceTransition = false; // after filter changes
 
+MovieMaker mm;
+
 void setup() {
-  size(800, 600, OPENGL);
+  size(1920, 1080, OPENGL);
+  textSize(fontSize);
+  hint(DISABLE_OPENGL_2X_SMOOTH); // OSX MovieMaker workaround
   try {
     records = readFile("London_05-05-2010_coded.csv");
 //    records = records.subList(0, 2000);
@@ -107,6 +115,25 @@ void setup() {
   noStroke();
   colorMode(HSB);
 //  textMode(SCREEN); // prevents model from hiding captions; but also involves massive render performance penalty. Urgh.
+}
+
+void stop() {
+  stopRecording();
+}
+
+void startRecording() {
+  println("Starting recording...");
+  mm = new MovieMaker(this, width, height, 
+    "recording-" + System.currentTimeMillis() + ".mov",
+    30, MovieMaker.MOTION_JPEG_B, MovieMaker.BEST);
+}
+
+void stopRecording() {
+  println("Stopping recording.");
+  if (mm!=null) {
+    mm.finish();
+    mm = null;
+  }
 }
 
 void draw() {
@@ -189,15 +216,21 @@ void draw() {
   // Captions
   fill(255, 0, 255, 255);
   noSmooth();
-  text("[C] Cycle: " + cycle, 15, 25);
-  text("[L] Lock selection: " + lockSelection, 15, 37);
-  text("Filters:", 15, 62);
-  text("[1] AT: " + (filterAt==null ? "off" : filterAt), 15, 74);
-  text("[2] RT: " + (filterRt==null ? "off" : filterRt), 15, 86);
-  text("[3] Language: " + (languages[filterLangIdx]==null ? "all" : languages[filterLangIdx]), 15, 98);
-  text("[4] Source: " + (sources[filterSourceIdx]==null ? "all" : sources[filterSourceIdx]), 15, 110);
-  text("Timeline", 15, height - height/10 + 15);
+  text("[C] Cycle: " + cycle, 15, 15 + fontSize);
+  text("[L] Lock selection: " + lockSelection, 15, 15 + 2 * fontSize);
+  text("Filters:", 15, 15 + 4 * fontSize);
+  text("[1] AT: " + (filterAt==null ? "off" : filterAt), 15, 15 + 5 * fontSize);
+  text("[2] RT: " + (filterRt==null ? "off" : filterRt), 15, 15 + 6 * fontSize);
+  text("[3] Language: " + (languages[filterLangIdx]==null ? "all" : languages[filterLangIdx]), 15, 15 + 7 * fontSize);
+  text("[4] Source: " + (sources[filterSourceIdx]==null ? "all" : sources[filterSourceIdx]), 15, 15 + 8 * fontSize);
+  text("Timeline", 15, height - height/10 + fontSize);
   smooth();
+  
+  // Record
+  if (mm!=null) {
+    mm.addFrame();
+    text("Recording...", 15, 130);
+  }
 }
 
 void drawGrid(Float[] grid) {
@@ -263,6 +296,12 @@ void keyPressed() {
     cycle = !cycle;
   } else if (key=='l') {
     lockSelection = !lockSelection;
+  } else if (key=='r') {
+    if (mm==null) {
+      startRecording();
+    } else {
+      stopRecording();
+    }
   }
 }
 

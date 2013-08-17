@@ -72,14 +72,15 @@ static final SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 //float maxLon = -0.05;
 
 float minLat = 51.47 + 0.0133 + 0.002;
-float maxLat = 51.55 - 0.0133 + 0.005;
+float maxLat = 51.55 - 0.0133 + 0.01;
 float minLon = -0.22 + 0.01;
 float maxLon = -0.05 - 0.01;
 
 float projectionAspect = 3.0 / 1.7; // Aspect ratio: w/h
 
 // Shapes
-float dotSize = 0.06f;
+float dotScale = 2.0;
+int fontSize = 24;
 
 Map<String, List<PVector>> map = null;
 
@@ -98,10 +99,11 @@ long inventoryChurnWindowDuration = loopDuration / 1000 * 3; // time between old
 
 long currentTimeMillis;
 MovieMaker mm = null;
-boolean recordMovie = false;
+boolean recordMovie = true;
 
 void setup() {
-  size(800, 600, OPENGL);
+  size(1920, 1080, OPENGL);
+  textSize(fontSize);
   calibrateProjection();
   noStroke();
   colorMode(HSB);
@@ -274,17 +276,17 @@ void drawJourneys(Collection<Journey> journeys, long curTime) {
 }
 
 void dot(float x, float y, float z, float size) {
-  ellipse(x, y, size, size);
+  ellipse(x, y, size * dotScale, size * dotScale);
 }
 
 void drawCaptions(Collection<Journey> journeys, int maxConcurrentJourneys, long curTime, long loopTime, long loopDuration) {
-  fill(0, 0, 30, 100);
-  rect(15, 15, width-30, 42); // background panel
+  fill(0, 0, 15 + 2 * fontSize, 100);
+  rect(15, 15, width-30, 2.5 * fontSize); // background panel
 
   fill(255);
-  text(df.format(new Date(curTime)), 15, 30);
-  text(String.format("Bikes in motion: %d", activeJourneys.size()), 15, 45);
-  text("covspc.wordpress.com", width-15-140, 30);
+  text(df.format(new Date(curTime)), 15 + 0.5 * fontSize, 15 + fontSize);
+  text(String.format("Bikes in motion: %d", activeJourneys.size()), 15 + 0.5*fontSize, 15 + 2 * fontSize);
+  text("covspc.wordpress.com", width-15-11.5*fontSize, 15 + fontSize);
 //  text(String.format("FPS: %.1f", frameRate), width-15-70, 45);
   
   float distance = 0;
@@ -295,17 +297,17 @@ void drawCaptions(Collection<Journey> journeys, int maxConcurrentJourneys, long 
   }
   distance /= activeJourneys.size();
   duration /= activeJourneys.size() * 60;
-  text(String.format("Avg trip distance: %.3f", distance), 160, 30);
-  text(String.format("Avg trip duration: %.1f min", duration), 160, 45);
+  text(String.format("Avg trip distance: %.3f", distance), width/2-10*fontSize, 15 + fontSize);
+  text(String.format("Avg trip duration: %.1f min", duration), width/2-10*fontSize, 15 + 2 * fontSize);
 
   fill(255/2, 100, 100); // activity bar
   float activity = (float)activeJourneys.size() / maxConcurrentJourneys; // [0..1]
-  rect(15, 50, activity * (width-30), 3);
+  rect(15, 15 + 3 * fontSize, activity * (width-30), 3);
 
   fill(255/2, 100, 250); // histogram
   float curPos = (float)loopTime / loopDuration;
-  float h = activity * 10;
-  rect(15 + curPos * (width-30), 70 - h, 5, h);
+  float h = activity * 1.5 * fontSize;
+  rect(15 + curPos * (width-30), 15 + 5 * fontSize - h, 5, h);
 }
 
 

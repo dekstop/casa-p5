@@ -11,16 +11,18 @@
 import processing.video.*;
 
 int d = 200; // CA size
-int cellSize = 1; // in pixels
+float cellSize = 2.4; // in pixels
 int n = 11;  // reorganise after n iterations
 int counter = 0;
+
+float drawScale = 2.0;
 
 List<CA> cas = new ArrayList<CA>();
 
 MovieMaker mm;
 
 void setup() {
-  size(800, 600);
+  size(1920, 1080);
   frameRate(10);
   colorMode(HSB);
 
@@ -52,6 +54,7 @@ void reset() {
 }
 
 void draw() {
+  println(frameCount);
   
   int totalChangeCount = 0;
 
@@ -89,7 +92,7 @@ void draw() {
   
   smooth();
   noFill();
-  drawCounter(width-50, 50, 30, (float)counter/n);
+  drawCounter(width-50, 50, 30 * drawScale, (float)counter/n);
   
   // Record
   if (mm!=null) {
@@ -106,7 +109,7 @@ void draw() {
 // Draw rate of change of a CA
 // x, y: top left corner of CA
 // rate: [0..1]
-void drawRate(int x, int y, int h, float rate) {
+void drawRate(int x, int y, float h, float rate) {
   fill(255/4, 255, 200, 200); // green
   rect(x, y + rate * h, 5, (1-rate) * h);
 }
@@ -115,8 +118,8 @@ void drawRate(int x, int y, int h, float rate) {
 // x, y: position
 // r: radius
 // counter: [0..1]
-void drawCounter(int x, int y, int r, float counter) {
-  strokeWeight(5);
+void drawCounter(int x, int y, float r, float counter) {
+  strokeWeight(5 * drawScale);
 
   stroke(0, 0, 255, 150); // white
   ellipse(x, y, r, r);
@@ -129,7 +132,7 @@ void drawCounter(int x, int y, int r, float counter) {
   }
 } 
 
-void drawCA(CA ca, int x, int y, int cellSize) {
+void drawCA(CA ca, int x, int y, float cellSize) {
   for (int i=0; i<ca.cells.length; i++) {
     for (int j=0; j<ca.cells[i].length; j++) {
       fill(0, 0, ca.cells[i][j].present * 255);

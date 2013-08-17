@@ -15,7 +15,7 @@ void drawShape(GLGraphicsOffScreen g, int x, int y, float radius) {
 }
 
 void setup() {
-  size(500, 500, GLConstants.GLGRAPHICS);
+  size(800, 800, GLConstants.GLGRAPHICS);
 
   glg1 = new GLGraphicsOffScreen(this, width, height, true, 0);
   glg1.smooth();

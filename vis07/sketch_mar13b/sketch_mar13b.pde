@@ -75,6 +75,9 @@ import processing.video.*;
  * Constants.
  */
 
+float fontSize = 24.0;
+float drawScale = 2.0;
+
 // Agents.
 int numAgents = 400;
 int agentLifetime = 3000; // lifetime in iterations (frames) per agent, can be extended by eating
@@ -93,10 +96,10 @@ int eatingLifetime = agentLifetime / 3;
 float biteSize = 0.3;
 
 // Larger agents will be faster.
-float minSize = 5;
-float maxSize = 10;
-float minSpeed = 0.9;
-float maxSpeed = 1.4;
+float minSize = 5 * drawScale;
+float maxSize = 10 * drawScale;
+float minSpeed = 0.9 * drawScale;
+float maxSpeed = 1.4 * drawScale;
 
 // How quickly can they turn?
 float aimAdjust = 0.2;
@@ -242,7 +245,8 @@ void setup() {
   frameRate(30);
   colorMode(HSB);
 //  size(640, 480);
-  size(800, 600);
+  size(1920, 1080);
+  textSize(fontSize);
 //  size(1280, 800);
 
   buildScene();
@@ -293,6 +297,7 @@ void buildScene(MazeModel model) {
 }
 
 void draw() {
+  println(frameCount);
   // Background.
   noStroke();
   fill(255/4, 200, 100);
@@ -307,12 +312,12 @@ void draw() {
   strokeWeight(5);
   
   stroke(id2hue(agentId), 200, 255, 255);
-  ellipse(spawnPoint.x, spawnPoint.y, 20, 20); // spawn point
+  ellipse(spawnPoint.x, spawnPoint.y, 20 * drawScale, 20 * drawScale); // spawn point
   
   stroke(0, 0, 200, 100);
   for (int i=0; i<targets.size(); i++) {
     PVector target = targets.get(i);
-    ellipse(target.x, target.y, targetSize, targetSize); // target
+    ellipse(target.x, target.y, targetSize * drawScale, targetSize * drawScale); // target
   }
 
   strokeWeight(1);
@@ -333,20 +338,20 @@ void draw() {
   // Stats.
   fill(0, 0, 0, 100);
   noStroke();
-  rect(10, 10, width-20, 20);
+  rect(10, 10, width-20, 1.5 * fontSize);
   
-  int mainHistW = round(width*0.2) / numHistogramBins * numHistogramBins;
-  int targetHistW = mainHistW / 2;
+  float mainHistW = (width*0.2) / numHistogramBins * numHistogramBins;
+  float targetHistW = mainHistW / 2;
   
   int[] agentHist = makeAgentHistogram(agents, numHistogramBins);
   drawHistogram(
     agentHist,
     12,
     12, 
-    mainHistW, 16);
+    mainHistW, 1.3 * fontSize);
   fill(0, 0, 255, 200);
   textAlign(LEFT);
-  text((agents.size()-(deadAgentCount - eatenAgentCount)) + " live agents", 10 + mainHistW + 5, 25);
+  text((agents.size()-(deadAgentCount - eatenAgentCount)) + " live agents", 10 + mainHistW + 5 + fontSize, 10 + fontSize * 1.1);
 
 //  textAlign(CENTER);
 //  text(targetAgentCount + " agents reached target", width/2, 25);
@@ -355,25 +360,25 @@ void draw() {
     deadAgentHist,
     width - 12 - mainHistW,
     12, 
-    mainHistW, 16);
+    mainHistW, 1.3 * fontSize);
   fill(0, 0, 255, 200);
   textAlign(RIGHT);
-  text(deadAgentCount + " agents died", width - 12 - mainHistW - 10, 25);
+  text(deadAgentCount + " agents died", width - fontSize - mainHistW - 10, 10 + fontSize * 1.1);
 
-  drawTargetStats(targets.get(0), targetHistW, 16, targetCount.get(0), targetHist.get(0));
-  drawTargetStats(targets.get(1), targetHistW, 16, targetCount.get(1), targetHist.get(1));
-  drawTargetStats(targets.get(2), targetHistW, 16, targetCount.get(2), targetHist.get(2));
+  drawTargetStats(targets.get(0), targetHistW, fontSize * 1.3, targetCount.get(0), targetHist.get(0));
+  drawTargetStats(targets.get(1), targetHistW, fontSize * 1.3, targetCount.get(1), targetHist.get(1));
+  drawTargetStats(targets.get(2), targetHistW, fontSize * 1.3, targetCount.get(2), targetHist.get(2));
   
   fill(0, 0, 0, 100);
   noStroke();
-  rect(10, height-30, width-20, 20);
+  rect(10, height-10-fontSize * 1.5, width-20, fontSize * 1.5);
 
   fill(0, 0, 255, 200);
   textAlign(LEFT);
   text("[space] restart with new terrain  [f] turn flypaper mode " +
-    (flypaperMode ? "off" : "on"), 15, height-15);
+    (flypaperMode ? "off" : "on"), 15, height - fontSize * 0.8);
   textAlign(RIGHT);
-  text("covspc.wordpress.com", width-25, height-15);
+  text("covspc.wordpress.com", width-25, height - fontSize * 0.8);
 
   // Record
   if (mm!=null) {
@@ -457,15 +462,15 @@ void drawHistogram(int[] hist, float x, float y, float w, float h) {
   }
 }
 
-void drawTargetStats(PVector target, int width, int height, int counter, int[] hist) {
+void drawTargetStats(PVector target, float width, float height, int counter, int[] hist) {
   drawHistogram(
     hist,
-    target.x + 20, target.y - 8,
+    target.x + fontSize * (drawScale + 1), target.y - height/2,
     width, height);
   if (counter > 0) {
     fill(0, 0, 255, 200);
     textAlign(LEFT);
-    text(counter, target.x + 20, target.y + 8  + 15);
+    text(counter, target.x + fontSize * (drawScale + 1), target.y + height/2+fontSize);
   }
 }
 
